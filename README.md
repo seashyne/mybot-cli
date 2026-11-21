@@ -118,6 +118,9 @@ api_key_env = "ANTHROPIC_API_KEY"
 model = "claude-sonnet-4-5"
 max_tokens = 8192
 # thinking_budget = 4096
+# max_retries = 2          # retries after 429, 5xx, or a connection error
+# retry_base_delay_ms = 500
+# retry_max_delay_ms = 8000
 
 [providers.openai]
 kind = "openai"
@@ -138,6 +141,22 @@ behavior = "allow"
 Precedence: CLI flags > environment (`MYBOT_PROVIDER`, `MYBOT_MODEL`) > config.
 A missing key exits with code 3 and names the environment variable to set.
 Localhost base URLs are allowed without a key.
+
+### Retries
+
+Requests that fail before the stream starts are retried up to `max_retries`
+times (default 2) with exponential backoff from `retry_base_delay_ms`, capped at
+`retry_max_delay_ms`. A server `Retry-After` header overrides the backoff.
+Only 429, 5xx, and connection errors are retried — 4xx client errors and
+authentication failures fail immediately. Retries never happen once streaming
+has begun, so output is never duplicated.
+
+```bash
+mybot exec "refactor this" --output-format stream-json | jq -c 'select(.type=="retry")'
+```
+
+In the TUI a retry shows up as a transient status message; `exec` prints
+`[retry 1/2 in 0.5s] …` to stderr.
 
 ## Usage
 
@@ -217,8 +236,8 @@ cargo clippy --all-targets
 ```
 
 Integration tests run a fake Anthropic-compatible SSE server, so the full
-pipeline (request shape, streaming parse, tool loop, session replay, exit
-codes) is covered offline.
+pipeline (request shape, streaming parse, tool loop, session replay, retries,
+exit codes) is covered offline.
 
 ## License
 

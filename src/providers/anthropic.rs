@@ -187,8 +187,10 @@ impl Provider for AnthropicProvider {
 
         let status = response.status();
         if !status.is_success() {
+            let retry_after = super::retry_after_header(&response);
             let text = response.text().await.unwrap_or_default();
-            return Err(ProviderError::from_status(status.as_u16(), &text));
+            return Err(ProviderError::from_status(status.as_u16(), &text)
+                .with_retry_after(retry_after));
         }
 
         let mut byte_stream = response.bytes_stream();

@@ -208,15 +208,10 @@ async fn provider_command(command: &ProviderCommand) -> Result<()> {
                 },
             };
             let provider = ProviderConfig {
-                kind,
                 base_url: base_url.clone(),
                 api_key_env: api_key_env.clone(),
-                api_key: None,
                 model: model.clone(),
-                max_tokens: 8192,
-                thinking_budget: None,
-                temperature: None,
-                headers: Default::default(),
+                ..ProviderConfig::defaults_for(kind)
             };
             config.providers.insert(name.clone(), provider);
             config.save()?;

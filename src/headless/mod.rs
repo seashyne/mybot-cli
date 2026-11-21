@@ -68,14 +68,15 @@ pub async fn run(options: ExecOptions) -> Result<()> {
         max_steps: options.max_steps,
         session: Some(session),
         messages,
+        retry: providers::RetryPolicy::from_resolved(&resolved),
     };
 
     let agent = Agent::new(agent_options);
     let (tx, rx) = mpsc::channel(256);
     let cancel = CancellationToken::new();
 
-    let stream_json = options.output_format == "stream-json";
-    let consumer = tokio::spawn(consume_events(rx, stream_json));
+    let format = options.output_format.clone();
+    let consumer = tokio::spawn(consume_events(rx, format));
 
     let prompt = options.prompt.clone();
     let task_tx = tx.clone();
@@ -177,7 +178,8 @@ struct Collected {
     model: Option<String>,
 }
 
-async fn consume_events(mut rx: mpsc::Receiver<AgentEvent>, stream_json: bool) -> Collected {
+async fn consume_events(mut rx: mpsc::Receiver<AgentEvent>, format: String) -> Collected {
+    let stream_json = format == "stream-json";
     let mut current = String::new();
     let mut last_turn = String::new();
     let mut input_tokens = 0u64;
@@ -209,6 +211,20 @@ async fn consume_events(mut rx: mpsc::Receiver<AgentEvent>, stream_json: bool) -
                 }
                 if output > 0 {
                     output_tokens = output;
+                }
+            }
+            AgentEvent::Retry {
+                attempt,
+                max_retries,
+                delay_ms,
+                error,
+            } => {
+                // stream-json already emitted the structured event above.
+                if !stream_json {
+                    eprintln!(
+                        "[retry {attempt}/{max_retries} in {:.1}s] {error}",
+                        delay_ms as f64 / 1000.0
+                    );
                 }
             }
             _ => {}
@@ -247,6 +263,18 @@ fn event_to_json(event: &AgentEvent) -> Option<serde_json::Value> {
             json!({"type": "turn_end", "stopReason": format!("{stop_reason:?}")})
         }
         AgentEvent::ModelName(name) => json!({"type": "model", "model": name}),
+        AgentEvent::Retry {
+            attempt,
+            max_retries,
+            delay_ms,
+            error,
+        } => json!({
+            "type": "retry",
+            "attempt": attempt,
+            "maxRetries": max_retries,
+            "delayMs": delay_ms,
+            "error": error,
+        }),
         AgentEvent::Done { stop_reason } => {
             json!({"type": "done", "stopReason": format!("{stop_reason:?}")})
         }

@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::error::{AppError, Result};
 use crate::permissions::{PermissionEngine, Prompter};
 use crate::protocol::{Message, StopReason, ToolResult};
-use crate::providers::{CompletionRequest, Provider, ProviderEvent};
+use crate::providers::{CompletionRequest, EventStream, Provider, ProviderEvent, RetryPolicy};
 use crate::session::Session;
 use crate::tools::{ExecutionMode, TodoItem, ToolCtx, ToolRegistry};
 
@@ -29,6 +29,7 @@ pub struct AgentOptions {
     pub max_steps: Option<usize>,
     pub session: Option<Arc<Mutex<Session>>>,
     pub messages: Vec<Message>,
+    pub retry: RetryPolicy,
 }
 
 pub struct Agent {
@@ -45,6 +46,7 @@ pub struct Agent {
     session: Option<Arc<Mutex<Session>>>,
     messages: Vec<Message>,
     todos: Arc<Mutex<Vec<TodoItem>>>,
+    retry: RetryPolicy,
 }
 
 impl Agent {
@@ -63,6 +65,7 @@ impl Agent {
             session: options.session,
             messages: options.messages,
             todos: Arc::new(Mutex::new(Vec::new())),
+            retry: options.retry,
         }
     }
 
@@ -125,11 +128,19 @@ impl Agent {
                 thinking_budget: self.thinking_budget,
             };
 
-            let mut stream = match self.provider.stream(request, cancel.clone()).await {
+            let mut stream = match self.open_stream(request, tx, cancel).await {
                 Ok(stream) => stream,
                 Err(error) => {
-                    let _ = tx.send(AgentEvent::Error(error.to_string())).await;
-                    return Err(error.into());
+                    if cancel.is_cancelled() {
+                        let _ = tx
+                            .send(AgentEvent::TurnEnd {
+                                stop_reason: StopReason::Aborted,
+                            })
+                            .await;
+                        final_stop = StopReason::Aborted;
+                        break;
+                    }
+                    return Err(error);
                 }
             };
 
@@ -202,6 +213,48 @@ impl Agent {
             })
             .await;
         Ok(final_stop)
+    }
+
+    /// Open the model stream, retrying transient failures (429, 5xx, connection
+    /// errors) with exponential backoff.
+    ///
+    /// Only failures that happen before the first byte arrives are retried, so
+    /// retrying can never duplicate streamed text.
+    async fn open_stream(
+        &self,
+        request: CompletionRequest,
+        tx: &mpsc::Sender<AgentEvent>,
+        cancel: &CancellationToken,
+    ) -> Result<EventStream> {
+        let mut attempt = 0u32;
+        loop {
+            match self.provider.stream(request.clone(), cancel.clone()).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => {
+                    if cancel.is_cancelled() {
+                        return Err(AppError::Cancelled);
+                    }
+                    if !error.is_retryable() || attempt >= self.retry.max_retries {
+                        let _ = tx.send(AgentEvent::Error(error.to_string())).await;
+                        return Err(error.into());
+                    }
+                    attempt += 1;
+                    let delay = self.retry.delay(attempt, error.retry_after);
+                    let _ = tx
+                        .send(AgentEvent::Retry {
+                            attempt,
+                            max_retries: self.retry.max_retries,
+                            delay_ms: delay.as_millis() as u64,
+                            error: error.message.clone(),
+                        })
+                        .await;
+                    tokio::select! {
+                        _ = cancel.cancelled() => return Err(AppError::Cancelled),
+                        _ = tokio::time::sleep(delay) => {}
+                    }
+                }
+            }
+        }
     }
 
     /// Clear the conversation and optionally switch to a new session ledger.
@@ -488,7 +541,7 @@ mod tests {
     use crate::config::PermissionMode;
     use crate::permissions::DenyPrompter;
     use crate::providers::mock::MockProvider;
-    use crate::providers::ProviderEvent;
+    use crate::providers::{ProviderError, ProviderEvent};
     use crate::tools::ToolRegistry;
 
     fn agent(provider: Arc<dyn Provider>, dir: &std::path::Path) -> Agent {
@@ -509,7 +562,16 @@ mod tests {
             max_steps: None,
             session: None,
             messages: Vec::new(),
+            retry: RetryPolicy::default(),
         })
+    }
+
+    fn fast_retry() -> RetryPolicy {
+        RetryPolicy {
+            max_retries: 2,
+            base_delay: std::time::Duration::from_millis(1),
+            max_delay: std::time::Duration::from_millis(2),
+        }
     }
 
     #[tokio::test]
@@ -578,6 +640,129 @@ mod tests {
             }
             other => panic!("expected tool results, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn retries_transient_failures_then_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::with_failures(
+            vec![
+                ProviderError::from_status(429, r#"{"error":{"message":"slow down"}}"#),
+                ProviderError::from_status(503, "{}"),
+            ],
+            vec![vec![
+                ProviderEvent::TextDelta("recovered".into()),
+                ProviderEvent::MessageStop {
+                    stop_reason: StopReason::EndTurn,
+                },
+            ]],
+        ));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.retry = fast_retry();
+
+        let (tx, mut rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let stop = agent.run_turn("hi", &tx, &cancel).await.unwrap();
+
+        assert_eq!(stop, StopReason::EndTurn);
+        assert_eq!(provider.calls(), 3);
+        assert!(agent.messages()[1].text().contains("recovered"));
+
+        let mut retries = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            if let AgentEvent::Retry {
+                attempt,
+                max_retries,
+                ..
+            } = event
+            {
+                retries.push((attempt, max_retries));
+            }
+        }
+        assert_eq!(retries, vec![(1, 2), (2, 2)]);
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_client_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::with_failures(
+            vec![ProviderError::from_status(400, r#"{"error":{"message":"bad request"}}"#)],
+            Vec::new(),
+        ));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.retry = fast_retry();
+
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let error = agent.run_turn("hi", &tx, &cancel).await.unwrap_err();
+
+        assert_eq!(error.exit_code(), 3);
+        assert_eq!(provider.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn gives_up_after_max_retries() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::with_failures(
+            vec![
+                ProviderError::from_status(500, "{}"),
+                ProviderError::from_status(500, "{}"),
+                ProviderError::from_status(500, "{}"),
+            ],
+            Vec::new(),
+        ));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.retry = fast_retry();
+
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let error = agent.run_turn("hi", &tx, &cancel).await.unwrap_err();
+
+        assert_eq!(error.exit_code(), 4);
+        assert_eq!(provider.calls(), 3, "one attempt plus two retries");
+    }
+
+    #[tokio::test]
+    async fn cancel_stops_retry_backoff() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::with_failures(
+            vec![
+                ProviderError::from_status(500, "{}"),
+                ProviderError::from_status(500, "{}"),
+            ],
+            Vec::new(),
+        ));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.retry = RetryPolicy {
+            max_retries: 5,
+            base_delay: std::time::Duration::from_secs(30),
+            max_delay: std::time::Duration::from_secs(60),
+        };
+
+        let (tx, mut rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let token = cancel.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            token.cancel();
+        });
+
+        let stop = agent.run_turn("hi", &tx, &cancel).await.unwrap();
+        assert_eq!(stop, StopReason::Aborted);
+        assert_eq!(provider.calls(), 1, "no retry after cancellation");
+
+        let mut saw_abort = false;
+        while let Ok(event) = rx.try_recv() {
+            if matches!(
+                event,
+                AgentEvent::TurnEnd {
+                    stop_reason: StopReason::Aborted
+                }
+            ) {
+                saw_abort = true;
+            }
+        }
+        assert!(saw_abort);
     }
 
     #[tokio::test]

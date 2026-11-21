@@ -117,6 +117,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         max_steps: None,
         session: Some(session),
         messages,
+        retry: providers::RetryPolicy::from_resolved(&resolved),
     })));
 
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(512);

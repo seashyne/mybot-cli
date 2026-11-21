@@ -1,7 +1,10 @@
 pub mod anthropic;
 pub mod mock;
 pub mod openai;
+pub mod retry;
 pub mod sse;
+
+pub use retry::RetryPolicy;
 
 use std::pin::Pin;
 use std::time::Duration;
@@ -74,6 +77,8 @@ pub struct ProviderError {
     pub kind: ProviderErrorKind,
     pub message: String,
     pub status: Option<u16>,
+    /// Server hint (`Retry-After`) for how long to wait before retrying.
+    pub retry_after: Option<Duration>,
 }
 
 impl ProviderError {
@@ -82,6 +87,7 @@ impl ProviderError {
             kind: ProviderErrorKind::Config,
             message: message.into(),
             status: None,
+            retry_after: None,
         }
     }
 
@@ -90,6 +96,7 @@ impl ProviderError {
             kind: ProviderErrorKind::Auth,
             message: message.into(),
             status: None,
+            retry_after: None,
         }
     }
 
@@ -98,6 +105,7 @@ impl ProviderError {
             kind: ProviderErrorKind::Network,
             message: message.into(),
             status: None,
+            retry_after: None,
         }
     }
 
@@ -106,7 +114,13 @@ impl ProviderError {
             kind: ProviderErrorKind::Protocol,
             message: message.into(),
             status: None,
+            retry_after: None,
         }
+    }
+
+    pub fn with_retry_after(mut self, retry_after: Option<Duration>) -> Self {
+        self.retry_after = retry_after;
+        self
     }
 
     pub fn from_status(status: u16, body: &str) -> Self {
@@ -121,13 +135,38 @@ impl ProviderError {
             kind,
             message: format!("HTTP {status}: {detail}"),
             status: Some(status),
+            retry_after: None,
         }
     }
 
+    /// Transient failures worth another attempt. Errors raised after the stream
+    /// has started are never retried, because text would be duplicated.
     pub fn is_retryable(&self) -> bool {
-        matches!(self.kind, ProviderErrorKind::RateLimit)
-            || self.status.map(|s| s >= 500).unwrap_or(false)
+        matches!(
+            self.kind,
+            ProviderErrorKind::RateLimit | ProviderErrorKind::Network
+        ) || self.status.is_some_and(|status| status >= 500)
     }
+}
+
+/// Read a `Retry-After` header expressed in seconds. HTTP-date values are
+/// ignored; the exponential schedule covers them.
+pub fn retry_after_header(response: &reqwest::Response) -> Option<Duration> {
+    let value = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?;
+    parse_retry_after(value)
+}
+
+pub fn parse_retry_after(value: &str) -> Option<Duration> {
+    let seconds: f64 = value.trim().parse().ok()?;
+    if !seconds.is_finite() || seconds < 0.0 {
+        return None;
+    }
+    // Cap absurd hints; the policy caps again at its own max_delay.
+    Some(Duration::from_secs_f64(seconds.min(3600.0)))
 }
 
 fn extract_error_message(body: &str) -> String {
@@ -182,7 +221,7 @@ pub fn http_client() -> Result<reqwest::Client, ProviderError> {
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(Duration::from_secs(180))
         .build()
-        .map_err(|e| ProviderError::network(format!("cannot build HTTP client: {e}")))
+        .map_err(|e| ProviderError::config(format!("cannot build HTTP client: {e}")))
 }
 
 pub fn build(resolved: &Resolved) -> Result<Box<dyn Provider>, ProviderError> {
@@ -221,5 +260,27 @@ mod tests {
         assert_eq!(ProviderError::from_status(429, "{}").kind, ProviderErrorKind::RateLimit);
         assert!(ProviderError::from_status(429, "{}").is_retryable());
         assert!(!ProviderError::from_status(400, "{}").is_retryable());
+    }
+
+    #[test]
+    fn retryable_kinds() {
+        assert!(ProviderError::from_status(500, "{}").is_retryable());
+        assert!(ProviderError::from_status(529, "{}").is_retryable());
+        assert!(ProviderError::network("connection reset").is_retryable());
+        assert!(!ProviderError::auth("bad key").is_retryable());
+        assert!(!ProviderError::protocol("bad json").is_retryable());
+    }
+
+    #[test]
+    fn parses_retry_after_seconds() {
+        assert_eq!(parse_retry_after("3"), Some(Duration::from_secs(3)));
+        assert_eq!(parse_retry_after(" 0.5 "), Some(Duration::from_millis(500)));
+        assert_eq!(parse_retry_after("-1"), None);
+        assert_eq!(parse_retry_after("Wed, 21 Oct 2026 07:28:00 GMT"), None);
+        assert_eq!(
+            parse_retry_after("999999"),
+            Some(Duration::from_secs(3600)),
+            "absurd hints are capped"
+        );
     }
 }

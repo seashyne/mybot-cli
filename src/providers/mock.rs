@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
@@ -8,11 +9,13 @@ use super::{CompletionRequest, EventStream, Provider, ProviderError, ProviderEve
 use crate::protocol::StopReason;
 
 /// Scripted provider used by tests and demos: each call to `stream` returns the
-/// next scripted event list.
+/// next scripted event list. Queued failures are returned first, one per call.
 pub struct MockProvider {
     name: String,
     model: String,
     scripts: Mutex<VecDeque<Vec<ProviderEvent>>>,
+    failures: Mutex<VecDeque<ProviderError>>,
+    calls: AtomicUsize,
 }
 
 impl MockProvider {
@@ -21,6 +24,16 @@ impl MockProvider {
             name: "mock".into(),
             model: "mock-model".into(),
             scripts: Mutex::new(scripts.into()),
+            failures: Mutex::new(VecDeque::new()),
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    /// Fail the first `failures.len()` calls, then serve `scripts`.
+    pub fn with_failures(failures: Vec<ProviderError>, scripts: Vec<Vec<ProviderEvent>>) -> Self {
+        Self {
+            failures: Mutex::new(failures.into()),
+            ..Self::new(scripts)
         }
     }
 
@@ -31,6 +44,11 @@ impl MockProvider {
                 stop_reason: StopReason::EndTurn,
             },
         ]])
+    }
+
+    /// How many times `stream` was called (successful or not).
+    pub fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
     }
 }
 
@@ -49,6 +67,10 @@ impl Provider for MockProvider {
         _req: CompletionRequest,
         _cancel: CancellationToken,
     ) -> Result<EventStream, ProviderError> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        if let Some(error) = self.failures.lock().expect("mock provider lock").pop_front() {
+            return Err(error);
+        }
         let events = self
             .scripts
             .lock()

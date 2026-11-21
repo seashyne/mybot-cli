@@ -36,6 +36,13 @@ pub enum AgentEvent {
     },
     /// The provider reported the concrete model name (useful for "auto").
     ModelName(String),
+    /// Opening the model stream failed transiently; another attempt follows.
+    Retry {
+        attempt: u32,
+        max_retries: u32,
+        delay_ms: u64,
+        error: String,
+    },
     /// The whole user turn finished.
     Done {
         stop_reason: StopReason,

@@ -56,39 +56,55 @@ pub struct ProviderConfig {
     pub temperature: Option<f32>,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
+    /// Retries after a transient failure (429, 5xx, connection error).
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default = "default_retry_base_delay_ms")]
+    pub retry_base_delay_ms: u64,
+    #[serde(default = "default_retry_max_delay_ms")]
+    pub retry_max_delay_ms: u64,
 }
 
 fn default_max_tokens() -> u32 {
     8192
 }
 
+fn default_max_retries() -> u32 {
+    2
+}
+
+fn default_retry_base_delay_ms() -> u64 {
+    500
+}
+
+fn default_retry_max_delay_ms() -> u64 {
+    8000
+}
+
 impl ProviderConfig {
-    pub fn anthropic_default() -> Self {
+    pub fn defaults_for(kind: ProviderKind) -> Self {
         Self {
-            kind: ProviderKind::Anthropic,
+            kind,
             base_url: None,
-            api_key_env: Some("ANTHROPIC_API_KEY".into()),
+            api_key_env: Some(kind.default_api_key_env().into()),
             api_key: None,
-            model: Some(ProviderKind::Anthropic.default_model().into()),
+            model: Some(kind.default_model().into()),
             max_tokens: default_max_tokens(),
             thinking_budget: None,
             temperature: None,
             headers: BTreeMap::new(),
+            max_retries: default_max_retries(),
+            retry_base_delay_ms: default_retry_base_delay_ms(),
+            retry_max_delay_ms: default_retry_max_delay_ms(),
         }
     }
 
+    pub fn anthropic_default() -> Self {
+        Self::defaults_for(ProviderKind::Anthropic)
+    }
+
     pub fn openai_default() -> Self {
-        Self {
-            kind: ProviderKind::OpenAi,
-            base_url: None,
-            api_key_env: Some("OPENAI_API_KEY".into()),
-            api_key: None,
-            model: Some(ProviderKind::OpenAi.default_model().into()),
-            max_tokens: default_max_tokens(),
-            thinking_budget: None,
-            temperature: None,
-            headers: BTreeMap::new(),
-        }
+        Self::defaults_for(ProviderKind::OpenAi)
     }
 }
 
@@ -199,6 +215,9 @@ pub struct Resolved {
     pub thinking_budget: Option<u32>,
     pub temperature: Option<f32>,
     pub headers: BTreeMap<String, String>,
+    pub max_retries: u32,
+    pub retry_base_delay_ms: u64,
+    pub retry_max_delay_ms: u64,
 }
 
 pub fn is_local_url(url: &str) -> bool {
@@ -325,6 +344,9 @@ impl Config {
             thinking_budget: config.thinking_budget,
             temperature: config.temperature,
             headers: config.headers.clone(),
+            max_retries: config.max_retries,
+            retry_base_delay_ms: config.retry_base_delay_ms,
+            retry_max_delay_ms: config.retry_max_delay_ms,
         })
     }
 }

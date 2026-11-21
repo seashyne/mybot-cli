@@ -163,6 +163,18 @@ impl App {
                     self.status.model = name;
                 }
             }
+            AgentEvent::Retry {
+                attempt,
+                max_retries,
+                delay_ms,
+                error,
+            } => {
+                let error = truncate(&error, 60);
+                self.info(format!(
+                    "retrying {attempt}/{max_retries} in {:.1}s — {error}",
+                    delay_ms as f64 / 1000.0
+                ));
+            }
             AgentEvent::Done { .. } => {
                 self.finish_streaming();
                 self.busy = false;
@@ -428,6 +440,15 @@ pub fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
+fn truncate(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -540,6 +561,22 @@ mod tests {
 
         app.handle_permission_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!(rx.try_recv().unwrap(), Decision::Deny);
+    }
+
+    #[test]
+    fn retry_event_shows_transient_info() {
+        let mut app = app();
+        app.handle_agent(AgentEvent::Retry {
+            attempt: 1,
+            max_retries: 2,
+            delay_ms: 500,
+            error: "HTTP 429: slow down".into(),
+        });
+
+        let (text, _) = app.info.clone().expect("retry should set the status message");
+        assert!(text.contains("retrying 1/2"), "got {text}");
+        assert!(text.contains("HTTP 429"), "got {text}");
+        assert!(app.transcript.is_empty(), "retries must not clutter the transcript");
     }
 
     #[test]
