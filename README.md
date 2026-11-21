@@ -72,6 +72,31 @@ mybot provider add local \
 mybot -m local/qwen2.5-coder
 ```
 
+### Local models (LM Studio, Ollama, llama.cpp)
+
+Any OpenAI-compatible local server works and needs no API key when the base URL
+is on localhost. With `model = "auto"`, mybot asks `/v1/models` which chat model
+is loaded (embedding-only models are skipped).
+
+LM Studio:
+
+```bash
+~/.lmstudio/bin/lms server start      # note the port it prints (often 1234)
+# load a chat model in the LM Studio UI, then:
+mybot provider add lmstudio --kind openai \
+  --base-url http://127.0.0.1:1234/v1 --model auto
+mybot
+```
+
+Ollama:
+
+```bash
+ollama serve
+mybot provider add ollama --kind openai \
+  --base-url http://127.0.0.1:11434/v1 --model auto
+mybot -m ollama/auto
+```
+
 Check what is configured:
 
 ```bash

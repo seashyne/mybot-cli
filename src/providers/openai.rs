@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -12,6 +14,7 @@ use crate::protocol::{Block, Message, StopReason};
 pub struct OpenAiProvider {
     client: reqwest::Client,
     resolved: Resolved,
+    resolved_model: OnceLock<String>,
 }
 
 impl OpenAiProvider {
@@ -19,7 +22,73 @@ impl OpenAiProvider {
         Ok(Self {
             client: super::http_client()?,
             resolved,
+            resolved_model: OnceLock::new(),
         })
+    }
+
+    /// When the configured model is `auto` (or empty), ask the server which
+    /// model it serves. LM Studio, Ollama, and llama.cpp expose `/v1/models`.
+    async fn resolve_model(&self, requested: &str) -> Result<String, ProviderError> {
+        let requested = requested.trim();
+        if !requested.is_empty() && !requested.eq_ignore_ascii_case("auto") {
+            return Ok(requested.to_string());
+        }
+
+        let url = models_url(&self.resolved.base_url);
+        let mut request = self.client.get(&url);
+        if !self.resolved.api_key.is_empty() {
+            request = request.bearer_auth(&self.resolved.api_key);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(|e| ProviderError::network(format!("cannot list models at {url}: {e}")))?;
+        let status = response.status();
+        if !status.is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(ProviderError::from_status(status.as_u16(), &text));
+        }
+
+        let value: Value = response
+            .json()
+            .await
+            .map_err(|e| ProviderError::protocol(format!("invalid model list: {e}")))?;
+        let model = pick_model(&value).ok_or_else(|| {
+            ProviderError::config(format!(
+                "no chat model available at {url}; load a chat model in your local server or pass -m <model>"
+            ))
+        })?;
+
+        let _ = self.resolved_model.set(model.clone());
+        Ok(model)
+    }
+}
+
+/// Pick the first non-embedding model from an OpenAI-style `/v1/models` list.
+fn pick_model(value: &Value) -> Option<String> {
+    value
+        .get("data")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+        .find(|id| !id.is_empty() && !looks_like_embedding(id))
+        .map(str::to_string)
+}
+
+fn looks_like_embedding(id: &str) -> bool {
+    let id = id.to_ascii_lowercase();
+    id.contains("embed") || id.contains("bge") || id.starts_with("e5-")
+}
+
+fn models_url(base: &str) -> String {
+    let base = base.trim_end_matches('/');
+    if let Some(root) = base.strip_suffix("/chat/completions") {
+        join_url(root, "models")
+    } else if base.ends_with("/v1") {
+        join_url(base, "models")
+    } else {
+        join_url(base, "v1/models")
     }
 }
 
@@ -150,7 +219,10 @@ impl Provider for OpenAiProvider {
     }
 
     fn model(&self) -> &str {
-        &self.resolved.model
+        self.resolved_model
+            .get()
+            .map(String::as_str)
+            .unwrap_or(&self.resolved.model)
     }
 
     async fn stream(
@@ -159,6 +231,8 @@ impl Provider for OpenAiProvider {
         cancel: CancellationToken,
     ) -> Result<EventStream, ProviderError> {
         let url = completions_url(&self.resolved.base_url);
+        let mut req = req;
+        req.model = self.resolve_model(&req.model).await?;
         let body = build_body(&req);
 
         let mut headers = HeaderMap::new();
@@ -430,6 +504,23 @@ mod tests {
             &events[0],
             Ok(ProviderEvent::ToolCallArgsDelta { json, .. }) if json.contains("path")
         ));
+    }
+
+    #[test]
+    fn auto_model_skips_embedding_models() {
+        let value = json!({
+            "data": [
+                {"id": "text-embedding-nomic-embed-text-v1.5"},
+                {"id": "qwen2.5-7b-instruct"}
+            ]
+        });
+        assert_eq!(pick_model(&value).as_deref(), Some("qwen2.5-7b-instruct"));
+    }
+
+    #[test]
+    fn auto_model_returns_none_for_embedding_only() {
+        let value = json!({"data": [{"id": "bge-m3"}, {"id": "nomic-embed-text"}]});
+        assert!(pick_model(&value).is_none());
     }
 
     #[test]
