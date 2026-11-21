@@ -1,0 +1,200 @@
+# mybot cli
+
+A terminal AI coding agent written in Rust. It streams model responses, runs
+tools against your working directory, asks before doing anything risky, and
+remembers sessions.
+
+```
+mybot            # interactive TUI
+mybot exec "explain this repo" --output-format text
+```
+
+## Features
+
+- **Two wire protocols**: Anthropic Messages API and OpenAI-compatible Chat
+  Completions, both streaming SSE. Works with Anthropic, OpenAI, MiniMax,
+  DeepSeek, OpenRouter, Ollama, and any compatible endpoint.
+- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`.
+  Reads are capped and line-numbered, edits are atomic and reject ambiguous
+  matches, bash has timeouts and process-group kills.
+- **Permissions**: `ask`, `auto`, and `full` modes with persisted allow/deny
+  rules, a bash risk classifier, and path containment checks.
+- **Sessions**: append-only JSONL ledgers in `~/.mybot/sessions`, with
+  `--continue` and `--session <id>`.
+- **Project context**: loads `CLAUDE.md` or `AGENTS.md` from the workspace root
+  plus `~/.mybot/AGENTS.md`, capped at 32 KB.
+- **Headless mode**: `text`, `json`, and `stream-json` output with stable exit
+  codes for scripts and CI.
+
+Not implemented yet: MCP servers, plugins, sub-agents, `/compact`, syntax
+highlighting.
+
+## Install
+
+Requires Rust 1.85+ (edition 2024).
+
+```bash
+git clone https://github.com/seashyne/mybot-cli.git
+cd mybot-cli
+cargo build --release
+./target/release/mybot --help
+```
+
+Or install into `~/.cargo/bin`:
+
+```bash
+cargo install --path .
+```
+
+The TUI is a default feature. For a headless-only build:
+
+```bash
+cargo build --release --no-default-features
+```
+
+## Quick start
+
+Set an API key and run:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+mybot
+```
+
+OpenAI-compatible providers can be added without editing files:
+
+```bash
+mybot provider add local \
+  --kind openai \
+  --base-url http://localhost:11434/v1 \
+  --model qwen2.5-coder
+
+mybot -m local/qwen2.5-coder
+```
+
+Check what is configured:
+
+```bash
+mybot provider list
+mybot provider test anthropic
+```
+
+## Configuration
+
+`~/.mybot/config.toml` (override the root with `MYBOT_HOME`):
+
+```toml
+default_provider = "anthropic"
+
+[providers.anthropic]
+kind = "anthropic"
+base_url = "https://api.anthropic.com"
+api_key_env = "ANTHROPIC_API_KEY"
+model = "claude-sonnet-4-5"
+max_tokens = 8192
+# thinking_budget = 4096
+
+[providers.openai]
+kind = "openai"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+model = "gpt-4o-mini"
+
+[permissions]
+mode = "auto"   # ask | auto | full
+
+[[permissions.rules]]
+tool = "bash"
+matcher = "command"
+pattern = "cargo test*"
+behavior = "allow"
+```
+
+Precedence: CLI flags > environment (`MYBOT_PROVIDER`, `MYBOT_MODEL`) > config.
+A missing key exits with code 3 and names the environment variable to set.
+Localhost base URLs are allowed without a key.
+
+## Usage
+
+```bash
+mybot [PROMPT]                 # interactive TUI, optional first prompt
+mybot exec "<prompt>"          # one turn, headless
+mybot exec - < prompt.txt      # read the prompt from stdin
+mybot -c                       # continue the newest session in this directory
+mybot --session <id>           # resume a specific session
+mybot init [dir]               # create AGENTS.md
+```
+
+Useful flags: `-m/--model provider/model`, `--permission ask|auto|full`,
+`--system-prompt[-file]`, `--append-system-prompt[-file]`, `--cwd`.
+
+`exec` flags: `--output-format text|json|stream-json`, `-o/--output-last-message`,
+`--timeout <seconds>`, `--max-steps <n>`.
+
+Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
+`7` step limit, `130` cancelled.
+
+### TUI keys
+
+| Key | Action |
+| --- | --- |
+| `Enter` | send |
+| `Shift+Enter` / `Ctrl+J` | newline |
+| `Esc` | cancel the running turn, or clear the input |
+| `Ctrl+C` | cancel the turn; when idle, quit |
+| `Ctrl+D` | quit when the input is empty |
+| `Up` / `Down` | history when empty, cursor movement otherwise |
+| `PgUp` / `PgDn` | scroll the transcript |
+| `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
+
+Slash commands: `/help`, `/new`, `/model`, `/sessions`, `/status`, `/init`,
+`/compact` (stub), `/quit`.
+
+## Permissions
+
+| Mode | Behaviour |
+| --- | --- |
+| `ask` | every tool call asks |
+| `auto` | read-only commands and in-project edits run; anything else asks |
+| `full` | everything runs, except hard-denied destructive commands |
+
+Hard-denied commands (`rm -rf /`, `rm -rf ~`, `mkfs`, `dd ... of=/dev/...`)
+are refused in every mode. Headless runs cannot prompt, so anything that needs
+approval is denied.
+
+Choosing "always allow" appends a rule to `config.toml`.
+
+## Architecture
+
+```
+src/cli.rs            clap surface and exit codes
+src/config/           config.toml, provider resolution, data paths
+src/protocol/         canonical Message/Block/ToolResult model
+src/providers/        SSE decoder, Anthropic, OpenAI, mock provider
+src/agent/            turn loop, delta assembler, events
+src/tools/            read, write, edit, bash, grep, glob, todowrite
+src/permissions/      modes, rules, bash classifier, path checks
+src/session/          JSONL session ledger
+src/prompt/           system prompt assembly and project context
+src/headless/         non-interactive runner and output formats
+src/tui/              ratatui UI (feature "tui")
+```
+
+The agent loop is shared by the TUI and headless mode: both consume the same
+`AgentEvent` stream, so tool execution and permission handling have exactly one
+implementation.
+
+## Tests
+
+```bash
+cargo test              # unit + integration, no API key required
+cargo clippy --all-targets
+```
+
+Integration tests run a fake Anthropic-compatible SSE server, so the full
+pipeline (request shape, streaming parse, tool loop, session replay, exit
+codes) is covered offline.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
