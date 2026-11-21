@@ -194,6 +194,9 @@ impl Agent {
         }
 
         let _ = tx
+            .send(AgentEvent::ModelName(self.provider.model().to_string()))
+            .await;
+        let _ = tx
             .send(AgentEvent::Done {
                 stop_reason: final_stop,
             })

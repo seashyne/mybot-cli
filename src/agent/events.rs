@@ -34,6 +34,8 @@ pub enum AgentEvent {
     TurnEnd {
         stop_reason: StopReason,
     },
+    /// The provider reported the concrete model name (useful for "auto").
+    ModelName(String),
     /// The whole user turn finished.
     Done {
         stop_reason: StopReason,

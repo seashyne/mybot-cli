@@ -130,6 +130,11 @@ pub async fn run(options: ExecOptions) -> Result<()> {
         std::fs::write(path, &collected.final_text)?;
     }
 
+    let reported_model = collected
+        .model
+        .clone()
+        .unwrap_or_else(|| resolved.model.clone());
+
     match options.output_format.as_str() {
         "json" => {
             let payload = json!({
@@ -138,7 +143,7 @@ pub async fn run(options: ExecOptions) -> Result<()> {
                 "status": "success",
                 "output": collected.final_text,
                 "error": null,
-                "model": resolved.model,
+                "model": reported_model,
                 "usage": {"input": collected.input_tokens, "output": collected.output_tokens},
                 "durationMs": duration_ms,
             });
@@ -149,6 +154,7 @@ pub async fn run(options: ExecOptions) -> Result<()> {
                 "type": "exec.completed",
                 "status": "success",
                 "output": collected.final_text,
+                "model": reported_model,
                 "usage": {"input": collected.input_tokens, "output": collected.output_tokens},
                 "durationMs": duration_ms,
             });
@@ -168,6 +174,7 @@ struct Collected {
     final_text: String,
     input_tokens: u64,
     output_tokens: u64,
+    model: Option<String>,
 }
 
 async fn consume_events(mut rx: mpsc::Receiver<AgentEvent>, stream_json: bool) -> Collected {
@@ -175,6 +182,7 @@ async fn consume_events(mut rx: mpsc::Receiver<AgentEvent>, stream_json: bool) -
     let mut last_turn = String::new();
     let mut input_tokens = 0u64;
     let mut output_tokens = 0u64;
+    let mut model = None;
 
     while let Some(event) = rx.recv().await {
         if stream_json
@@ -189,6 +197,11 @@ async fn consume_events(mut rx: mpsc::Receiver<AgentEvent>, stream_json: bool) -
                     last_turn = current.clone();
                 }
                 current.clear();
+            }
+            AgentEvent::ModelName(name) => {
+                if !name.is_empty() {
+                    model = Some(name);
+                }
             }
             AgentEvent::Usage { input, output } => {
                 if input > 0 {
@@ -206,6 +219,7 @@ async fn consume_events(mut rx: mpsc::Receiver<AgentEvent>, stream_json: bool) -
         final_text: last_turn,
         input_tokens,
         output_tokens,
+        model,
     }
 }
 
@@ -232,6 +246,7 @@ fn event_to_json(event: &AgentEvent) -> Option<serde_json::Value> {
         AgentEvent::TurnEnd { stop_reason } => {
             json!({"type": "turn_end", "stopReason": format!("{stop_reason:?}")})
         }
+        AgentEvent::ModelName(name) => json!({"type": "model", "model": name}),
         AgentEvent::Done { stop_reason } => {
             json!({"type": "done", "stopReason": format!("{stop_reason:?}")})
         }

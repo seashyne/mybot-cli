@@ -158,6 +158,11 @@ impl App {
             AgentEvent::TurnEnd { .. } => {
                 self.finish_streaming();
             }
+            AgentEvent::ModelName(name) => {
+                if !name.is_empty() {
+                    self.status.model = name;
+                }
+            }
             AgentEvent::Done { .. } => {
                 self.finish_streaming();
                 self.busy = false;
