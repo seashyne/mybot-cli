@@ -8,6 +8,36 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
+Fourth release: welcome card, status bar cues, `@` mentions, and `/effort`.
+
+### Added
+
+- **`@` file & plugin mentions** — typing `@` in the composer opens an
+  autocomplete popup for workspace files, plugins, and skills.
+- **`/effort [off|low|medium|high]`** — switches reasoning effort at runtime,
+  persists it to `config.toml`, and sends `reasoning_effort` on OpenAI-compatible
+  requests.
+- **`/changelog`** — displays release notes directly inside the TUI, with the
+  latest highlights surfaced on the welcome card.
+- **Model context windows** — added known context window sizes and expanded
+  MiniMax catalog entries (`MiniMax-M2.5`, `MiniMax-M2.1`, `M3.1-Flash`).
+
+### Changed
+
+- **Welcome card & composer** — centered banner, rounded welcome card with
+  `Ready` badge, tips, and What's new highlights, plus a hint bar, prompt
+  gutter, and placeholder inside the composer.
+- **Status bar** — now shows shortened working directory, risk-colored
+  permission badge (`full access` in red), active effort level, and context
+  usage percentage.
+
+### Fixed
+
+- Anthropic `message_delta` events without `input_tokens` no longer overwrite
+  the session's input token count back to zero.
+
 ## [0.3.0] - 2026-11-22
 
 Third release: a command palette, session resume, live model lists, and
@@ -138,7 +168,8 @@ First tagged release.
 - Skills and plugins, project context loading, an installer script, an npm
   package, and a documentation site.
 
-[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/seashyne/mybot-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/seashyne/mybot-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/seashyne/mybot-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/seashyne/mybot-cli/releases/tag/v0.1.0

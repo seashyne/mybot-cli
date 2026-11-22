@@ -35,7 +35,7 @@ Windows is not supported directly — use WSL2.
 ## Pin a version
 
 ```bash
-MYBOT_VERSION=v0.3.0 npm install -g mybot-cli
+MYBOT_VERSION=v0.4.0 npm install -g mybot-cli
 ```
 
 ## Alternative installs
