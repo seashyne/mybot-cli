@@ -8,6 +8,16 @@ fn main() {
     println!("cargo:rustc-env=MYBOT_GIT_SHA={sha}");
     println!("cargo:rustc-env=MYBOT_GIT_DATE={date}");
     println!("cargo:rustc-env=MYBOT_TARGET={target}");
+
+    // Rebuild the version string when HEAD or the current branch moves.
+    if let Some(head) = git(&["rev-parse", "--git-path", "HEAD"]) {
+        println!("cargo:rerun-if-changed={head}");
+    }
+    if let Some(reference) = git(&["symbolic-ref", "-q", "HEAD"])
+        && let Some(path) = git(&["rev-parse", "--git-path", reference.trim()])
+    {
+        println!("cargo:rerun-if-changed={path}");
+    }
 }
 
 fn git(args: &[&str]) -> Option<String> {
