@@ -44,7 +44,19 @@ cross-compilation instructions.
 
 ## Install
 
-Requires Rust 1.85+ (edition 2024).
+One line, downloads the prebuilt binary for your platform:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
+```
+
+Or with npm:
+
+```bash
+npm install -g mybot-cli
+```
+
+From source (Rust 1.85+, edition 2024):
 
 ```bash
 git clone https://github.com/seashyne/mybot-cli.git
@@ -53,8 +65,9 @@ cd mybot-cli
 mybot --help
 ```
 
-`install.sh` also accepts `--prefix DIR`, `--headless` (no TUI) and
-`--uninstall`. Or install into `~/.cargo/bin`:
+`install.sh` accepts `--prefix DIR`, `--headless` (no TUI), `--uninstall`,
+`--version TAG` and `--from-source` / `--from-release`. Or install into
+`~/.cargo/bin`:
 
 ```bash
 cargo install --path .

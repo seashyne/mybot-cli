@@ -10,6 +10,41 @@ runtime dependency is `bash` for the `bash` tool.
 
 ## Quick start (Linux / macOS)
 
+### One line from a URL
+
+Downloads the prebuilt binary for your platform into `~/.local/bin`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
+```
+
+Options are passed after `sh -s --`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh -s -- --prefix /usr/local/bin
+# pin a release
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh -s -- --version v0.1.0
+# remove it
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh -s -- --uninstall
+```
+
+The script verifies `sha256sums.txt` when the release publishes one.
+
+### npm
+
+```bash
+npm install -g mybot-cli
+mybot
+```
+
+The package is a small wrapper that downloads the native binary on first run
+(also works with `npx mybot-cli`). Set `MYBOT_VERSION=v0.1.0` to pin a release.
+
+### Build from source
+
 ```bash
 # Ubuntu/Debian build prerequisites
 sudo apt-get update
@@ -20,20 +55,12 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 git clone https://github.com/seashyne/mybot-cli.git
 cd mybot-cli
-cargo build --release
-./target/release/mybot --help
-```
-
-Install with the bundled script (builds and copies to `~/.local/bin`):
-
-```bash
 ./install.sh
-# other locations, or headless-only (no TUI):
-./install.sh --prefix /usr/local/bin
-./install.sh --headless
-# remove it again:
-./install.sh --uninstall
+mybot --help
 ```
+
+`install.sh` in a checkout builds from source; piped from a URL it downloads a
+release. Force either mode with `--from-source` / `--from-release`.
 
 Or use cargo, which installs into `~/.cargo/bin`:
 
@@ -176,17 +203,33 @@ cargo clippy --all-targets
 
 ## Update
 
+Re-run the installer; it replaces the binary in place:
+
 ```bash
-cd mybot-cli
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
+```
+
+From a checkout:
+
+```bash
 git pull
+./install.sh
+```
+
+With cargo:
+
+```bash
 cargo install --path . --force
 ```
 
 ## Uninstall
 
 ```bash
-cargo uninstall mybot
-rm -rf ~/.mybot        # config, sessions, global AGENTS.md
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh -s -- --uninstall
+npm uninstall -g mybot-cli     # if installed through npm
+cargo uninstall mybot          # if installed through cargo
+rm -rf ~/.mybot                # config, sessions, global AGENTS.md
 ```
 
 ## Troubleshooting

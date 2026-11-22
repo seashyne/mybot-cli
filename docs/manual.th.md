@@ -47,7 +47,43 @@ mybot คือ AI coding agent สำหรับ terminal ที่เขี�
 
 ## 3. การติดตั้ง
 
-### 3.1 สิ่งที่ต้องมี
+### 3.1 ติดตั้งด้วยคำสั่งเดียว (แนะนำ)
+
+ดาวน์โหลด binary ที่ build ไว้แล้วสำหรับแพลตฟอร์มของคุณ:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
+```
+
+ติดตั้งลง `~/.local/bin` และตรวจ checksum ให้อัตโนมัติ
+
+ส่ง option ต่อท้ายด้วย `sh -s --`:
+
+```bash
+# เลือกที่ติดตั้ง
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh -s -- --prefix /usr/local/bin
+
+# เลือกเวอร์ชัน
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh -s -- --version v0.1.0
+
+# ถอนการติดตั้ง
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh -s -- --uninstall
+```
+
+### 3.2 ติดตั้งผ่าน npm
+
+```bash
+npm install -g mybot-cli
+mybot
+```
+
+ตัว package จะดาวน์โหลด binary ให้ตอนรันครั้งแรก (ใช้ `npx mybot-cli` ได้ด้วย)
+กำหนดเวอร์ชันด้วย `MYBOT_VERSION=v0.1.0`
+
+### 3.3 สิ่งที่ต้องมี (สำหรับ build จาก source)
 
 - Rust 1.85 ขึ้นไป (โปรเจกต์ใช้ edition 2024)
 - C toolchain, CMake และ Perl (สำหรับ `aws-lc-sys` ที่ rustls ใช้)
@@ -62,7 +98,7 @@ sudo apt-get install -y build-essential cmake perl pkg-config git
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-### 3.2 ติดตั้งจาก source
+### 3.4 ติดตั้งจาก source
 
 ```bash
 git clone https://github.com/seashyne/mybot-cli.git
@@ -77,6 +113,7 @@ mybot --help
 ./install.sh --prefix /usr/local/bin   # เปลี่ยนที่ติดตั้ง
 ./install.sh --headless                # build แบบไม่มี TUI
 ./install.sh --uninstall               # ถอนการติดตั้ง
+./install.sh --from-release            # ดาวน์โหลด release แทนการ build
 ```
 
 หรือติดตั้งเข้า `~/.cargo/bin` ด้วย cargo:
@@ -91,7 +128,7 @@ cargo install --path .
 cargo install --git https://github.com/seashyne/mybot-cli.git
 ```
 
-### 3.3 build แบบไม่มี TUI (headless only)
+### 3.5 build แบบไม่มี TUI (headless only)
 
 เหมาะกับเซิร์ฟเวอร์หรือ CI ที่ไม่ต้องการ ratatui/crossterm:
 
@@ -99,7 +136,7 @@ cargo install --git https://github.com/seashyne/mybot-cli.git
 cargo build --release --no-default-features
 ```
 
-### 3.4 ติดตั้งบน ARM (Raspberry Pi / เซิร์ฟเวอร์ ARM64)
+### 3.6 ติดตั้งบน ARM (Raspberry Pi / เซิร์ฟเวอร์ ARM64)
 
 วิธีที่ง่ายที่สุดคือ build บนอุปกรณ์นั้นโดยตรง:
 

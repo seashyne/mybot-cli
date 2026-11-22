@@ -15,8 +15,8 @@ permalink: /
     <a class="btn" href="https://github.com/seashyne/mybot-cli">GitHub</a>
   </div>
 
-  <pre class="hero-code"><code>git clone https://github.com/seashyne/mybot-cli.git
-cd mybot-cli &amp;&amp; ./install.sh</code></pre>
+  <pre class="hero-code"><code>curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
+  | sh</code></pre>
 </section>
 
 ## ทำอะไรได้บ้าง
@@ -94,16 +94,23 @@ mybot
 สลับ model ระหว่างใช้งานได้ด้วย `/model` — เลือกจากรายการหรือพิมพ์ชื่อเอง
 แล้วระบบบันทึกเป็นค่า default ให้
 
-## ติดตั้งใน 3 ขั้น
+## ติดตั้ง
+
+คำสั่งเดียว — ดาวน์โหลด binary ที่ build ไว้แล้ว:
 
 ```bash
-# 1. prerequisites (Ubuntu/Debian)
-sudo apt-get install -y build-essential cmake perl pkg-config git
+curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
+```
 
-# 2. Rust 1.85+
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+หรือผ่าน npm:
 
-# 3. build + install
+```bash
+npm install -g mybot-cli
+```
+
+หรือ build เองจาก source:
+
+```bash
 git clone https://github.com/seashyne/mybot-cli.git
 cd mybot-cli && ./install.sh
 ```
