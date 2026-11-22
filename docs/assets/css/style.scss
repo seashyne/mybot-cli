@@ -1,0 +1,126 @@
+---
+---
+
+@import "minima";
+
+/* ---- product page tweaks ---- */
+
+.hero {
+  padding: 2.4rem 0 2rem;
+  border-bottom: 1px solid #e8e8e8;
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.hero-title {
+  font-size: 3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin: 0 0 .4rem;
+}
+
+.hero-tagline {
+  font-size: 1.25rem;
+  font-weight: 500;
+  color: #2d2d2d;
+  margin: 0 0 .3rem;
+}
+
+.hero-sub {
+  color: #666;
+  margin: 0 0 1.4rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  justify-content: center;
+  margin-bottom: 1.4rem;
+}
+
+.btn {
+  display: inline-block;
+  padding: .55rem 1.1rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  color: #2d2d2d;
+  text-decoration: none;
+  font-weight: 500;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.btn:hover {
+  background: #f4f4f4;
+  border-color: #b8b8b8;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: #1f6feb;
+  border-color: #1f6feb;
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #1a5fd0;
+  border-color: #1a5fd0;
+  color: #fff;
+}
+
+.hero-code {
+  display: inline-block;
+  text-align: left;
+  margin: 0;
+  font-size: .86rem;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 2rem;
+}
+
+.feature {
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: .9rem 1rem;
+}
+
+.feature h3 {
+  margin: .1rem 0 .4rem;
+  font-size: 1rem;
+}
+
+.feature p {
+  margin: 0;
+  font-size: .9rem;
+  color: #555;
+}
+
+/* tables sit directly in .wrapper on the default layout */
+.wrapper table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.2rem;
+}
+
+.wrapper table th,
+.wrapper table td {
+  text-align: left;
+  padding: .45rem .7rem;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.wrapper table th {
+  background: #fafafa;
+}
+
+@media screen and (max-width: 600px) {
+  .hero-title { font-size: 2.1rem; }
+  .hero-tagline { font-size: 1.05rem; }
+  .hero-code { font-size: .75rem; }
+}

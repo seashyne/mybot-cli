@@ -21,13 +21,22 @@ mybot exec "explain this repo" --output-format text
   rules, a bash risk classifier, and path containment checks.
 - **Sessions**: append-only JSONL ledgers in `~/.mybot/sessions`, with
   `--continue` and `--session <id>`.
+- **Context compaction**: `/compact` summarizes the conversation with the
+  current model, replaces the history with the summary, and records the
+  compaction in the session ledger so resumed sessions stay small.
 - **Project context**: loads `CLAUDE.md` or `AGENTS.md` from the workspace root
   plus `~/.mybot/AGENTS.md`, capped at 32 KB.
 - **Headless mode**: `text`, `json`, and `stream-json` output with stable exit
   codes for scripts and CI.
 
-Not implemented yet: MCP servers, plugins, sub-agents, `/compact`, syntax
-highlighting.
+Not implemented yet: MCP servers, plugins, sub-agents, syntax highlighting.
+
+## Platforms
+
+Linux and macOS on x86_64 and ARM64 are the primary targets. Windows works
+through WSL2 or Git Bash (the `bash` tool requires `bash`), and Android Termux
+is experimental. See [docs/install.md](docs/install.md) for the full matrix and
+cross-compilation instructions.
 
 ## Install
 
@@ -36,11 +45,12 @@ Requires Rust 1.85+ (edition 2024).
 ```bash
 git clone https://github.com/seashyne/mybot-cli.git
 cd mybot-cli
-cargo build --release
-./target/release/mybot --help
+./install.sh            # builds and installs to ~/.local/bin
+mybot --help
 ```
 
-Or install into `~/.cargo/bin`:
+`install.sh` also accepts `--prefix DIR`, `--headless` (no TUI) and
+`--uninstall`. Or install into `~/.cargo/bin`:
 
 ```bash
 cargo install --path .
@@ -192,7 +202,21 @@ Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
 | `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
 
 Slash commands: `/help`, `/new`, `/model`, `/sessions`, `/status`, `/init`,
-`/compact` (stub), `/quit`.
+`/compact`, `/quit`.
+
+### Compacting a session
+
+`/compact` asks the current model for a handoff summary of the conversation,
+then replaces the in-memory history with that summary. The session ledger gets a
+`compact` entry, so `-c` and `--session` resume from the summary instead of
+replaying every earlier turn. The previous transcript stays visible in the TUI
+with a compaction boundary line.
+
+Compaction needs one extra model call. Press `Esc` while it runs to cancel; a
+failed or cancelled compaction leaves the history untouched. If the summary hits
+the output limit it is still used, and the boundary line marks it as truncated.
+Very long conversations are flattened into a bounded transcript before
+summarization, keeping the first request and the most recent turns.
 
 ## Permissions
 
@@ -238,6 +262,12 @@ cargo clippy --all-targets
 Integration tests run a fake Anthropic-compatible SSE server, so the full
 pipeline (request shape, streaming parse, tool loop, session replay, retries,
 exit codes) is covered offline.
+
+## Documentation
+
+- [Installation and platform support](docs/install.md)
+- [คู่มือผู้ใช้ภาษาไทย](docs/manual.th.md)
+- [Performance benchmarks](docs/performance.md)
 
 ## License
 

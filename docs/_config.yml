@@ -1,0 +1,26 @@
+title: mybot cli
+description: A terminal AI coding agent written in Rust — fast, small, works with cloud and local models.
+theme: minima
+url: "https://seashyne.github.io"
+baseurl: "/mybot-cli"
+lang: en
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+  syntax_highlighter: rouge
+
+show_excerpts: false
+github_username: seashyne
+
+header_pages:
+  - install.md
+  - manual.th.md
+  - performance.md
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
