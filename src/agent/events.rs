@@ -1,6 +1,26 @@
 use crate::protocol::StopReason;
 use crate::tools::TodoItem;
 
+/// Result of a successful compaction.
+#[derive(Debug, Clone)]
+pub struct CompactReport {
+    pub messages_before: usize,
+    pub messages_after: usize,
+    pub tokens_before: usize,
+    pub tokens_after: usize,
+    pub summary_chars: usize,
+    /// The model hit its output limit while writing the summary.
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum CompactOutcome {
+    Compacted(CompactReport),
+    /// There was no history to summarize.
+    Empty,
+    Cancelled,
+}
+
 /// Events emitted by the agent loop. The TUI and headless mode consume the same
 /// stream so there is exactly one implementation of the loop.
 #[derive(Debug, Clone)]
@@ -43,6 +63,12 @@ pub enum AgentEvent {
         delay_ms: u64,
         error: String,
     },
+    /// A `/compact` run started summarizing the history.
+    CompactStart {
+        messages: usize,
+        tokens: usize,
+    },
+    CompactEnd(CompactOutcome),
     /// The whole user turn finished.
     Done {
         stop_reason: StopReason,

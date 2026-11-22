@@ -6,7 +6,7 @@ use serde_json::json;
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::agent::{Agent, AgentEvent, AgentOptions};
+use crate::agent::{Agent, AgentEvent, AgentOptions, CompactOutcome};
 use crate::config::{Config, PermissionMode};
 use crate::error::{AppError, Result};
 use crate::permissions::{DenyPrompter, PermissionEngine};
@@ -275,6 +275,27 @@ fn event_to_json(event: &AgentEvent) -> Option<serde_json::Value> {
             "delayMs": delay_ms,
             "error": error,
         }),
+        AgentEvent::CompactStart { messages, tokens } => json!({
+            "type": "compact_start",
+            "messages": messages,
+            "tokens": tokens,
+        }),
+        AgentEvent::CompactEnd(outcome) => match outcome {
+            CompactOutcome::Compacted(report) => json!({
+                "type": "compact_end",
+                "status": "compacted",
+                "messagesBefore": report.messages_before,
+                "messagesAfter": report.messages_after,
+                "tokensBefore": report.tokens_before,
+                "tokensAfter": report.tokens_after,
+                "summaryChars": report.summary_chars,
+                "truncated": report.truncated,
+            }),
+            CompactOutcome::Empty => json!({"type": "compact_end", "status": "empty"}),
+            CompactOutcome::Cancelled => {
+                json!({"type": "compact_end", "status": "cancelled"})
+            }
+        },
         AgentEvent::Done { stop_reason } => {
             json!({"type": "done", "stopReason": format!("{stop_reason:?}")})
         }

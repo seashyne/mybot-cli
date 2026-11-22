@@ -15,6 +15,7 @@ pub struct MockProvider {
     model: String,
     scripts: Mutex<VecDeque<Vec<ProviderEvent>>>,
     failures: Mutex<VecDeque<ProviderError>>,
+    requests: Mutex<Vec<CompletionRequest>>,
     calls: AtomicUsize,
 }
 
@@ -25,6 +26,7 @@ impl MockProvider {
             model: "mock-model".into(),
             scripts: Mutex::new(scripts.into()),
             failures: Mutex::new(VecDeque::new()),
+            requests: Mutex::new(Vec::new()),
             calls: AtomicUsize::new(0),
         }
     }
@@ -50,6 +52,15 @@ impl MockProvider {
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
+
+    /// The most recent request body, for assertions in tests.
+    pub fn last_request(&self) -> Option<CompletionRequest> {
+        self.requests
+            .lock()
+            .expect("mock provider lock")
+            .last()
+            .cloned()
+    }
 }
 
 #[async_trait]
@@ -64,10 +75,11 @@ impl Provider for MockProvider {
 
     async fn stream(
         &self,
-        _req: CompletionRequest,
+        req: CompletionRequest,
         _cancel: CancellationToken,
     ) -> Result<EventStream, ProviderError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        self.requests.lock().expect("mock provider lock").push(req);
         if let Some(error) = self.failures.lock().expect("mock provider lock").pop_front() {
             return Err(error);
         }

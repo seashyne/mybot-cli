@@ -135,6 +135,25 @@ fn write_config(home: &std::path::Path, base_url: &str, with_key: bool) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn provider_test_uses_the_named_provider() {
+    let base_url = start_server().await;
+    let home = tempfile::tempdir().unwrap();
+    write_config(home.path(), &base_url, true);
+
+    let mut command = Command::cargo_bin("mybot").unwrap();
+    command
+        .args(["provider", "test", "fake"])
+        .env("MYBOT_HOME", home.path())
+        .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("OPENAI_API_KEY");
+
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OK: fake / test-model"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn exec_prints_streamed_answer() {
     let base_url = start_server().await;
     let home = tempfile::tempdir().unwrap();
@@ -307,5 +326,64 @@ async fn continue_replays_previous_messages() {
     assert!(
         bodies[1].contains("Hello from fake provider"),
         "assistant reply was not replayed"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn continue_after_compaction_replays_only_summary() {
+    use std::io::Write;
+
+    let (base_url, bodies) = start_capturing_server().await;
+    let home = tempfile::tempdir().unwrap();
+    let cwd = tempfile::tempdir().unwrap();
+    write_config(home.path(), &base_url, true);
+
+    let run = |args: &[&str]| {
+        let mut command = Command::cargo_bin("mybot").unwrap();
+        command
+            .args(args)
+            .current_dir(cwd.path())
+            .env("MYBOT_HOME", home.path())
+            .env_remove("ANTHROPIC_API_KEY")
+            .env_remove("OPENAI_API_KEY");
+        command.assert().success();
+    };
+
+    run(&["exec", "old question"]);
+
+    let sessions = home.path().join("sessions");
+    let ledger = std::fs::read_dir(&sessions)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+        .expect("session ledger");
+
+    // Simulate /compact: append the marker that replaces earlier history.
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&ledger)
+        .unwrap();
+    writeln!(
+        file,
+        r#"{{"type":"compact","summary":"compact summary marker"}}"#
+    )
+    .unwrap();
+    drop(file);
+
+    run(&["exec", "new question", "-c"]);
+
+    let bodies = bodies.lock().unwrap();
+    assert_eq!(bodies.len(), 2, "expected two model requests");
+    assert!(bodies[1].contains("compact summary marker"));
+    assert!(
+        !bodies[1].contains("old question"),
+        "old user message leaked into the request: {}",
+        bodies[1]
+    );
+    assert!(
+        !bodies[1].contains("Hello from fake provider"),
+        "old assistant reply leaked into the request: {}",
+        bodies[1]
     );
 }

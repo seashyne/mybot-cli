@@ -8,13 +8,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{AppError, Result};
 use crate::permissions::{PermissionEngine, Prompter};
-use crate::protocol::{Message, StopReason, ToolResult};
+use crate::protocol::{Message, StopReason, ToolResult, estimate_tokens};
 use crate::providers::{CompletionRequest, EventStream, Provider, ProviderEvent, RetryPolicy};
 use crate::session::Session;
 use crate::tools::{ExecutionMode, TodoItem, ToolCtx, ToolRegistry};
 
 use super::assembler::{Assembler, ToolInvocation};
-use super::events::AgentEvent;
+use super::events::{AgentEvent, CompactOutcome, CompactReport};
 
 pub struct AgentOptions {
     pub provider: Arc<dyn Provider>,
@@ -262,6 +262,115 @@ impl Agent {
         self.messages.clear();
         self.session = session;
         self.todos.lock().await.clear();
+    }
+
+    /// Summarize the conversation with the active provider and replace the
+    /// history with that summary.
+    ///
+    /// The compaction is written to the session ledger before the in-memory
+    /// history changes, so a failed write leaves the turn state untouched.
+    pub async fn compact(
+        &mut self,
+        tx: &mpsc::Sender<AgentEvent>,
+        cancel: &CancellationToken,
+    ) -> Result<CompactOutcome> {
+        if self.messages.is_empty() {
+            let _ = tx
+                .send(AgentEvent::CompactEnd(CompactOutcome::Empty))
+                .await;
+            return Ok(CompactOutcome::Empty);
+        }
+        if cancel.is_cancelled() {
+            let _ = tx
+                .send(AgentEvent::CompactEnd(CompactOutcome::Cancelled))
+                .await;
+            return Ok(CompactOutcome::Cancelled);
+        }
+
+        let messages_before = self.messages.len();
+        let tokens_before = estimate_tokens(&self.messages);
+        let _ = tx
+            .send(AgentEvent::CompactStart {
+                messages: messages_before,
+                tokens: tokens_before,
+            })
+            .await;
+
+        let request = CompletionRequest {
+            model: self.provider.model().to_string(),
+            system: vec![crate::compact::SYSTEM_PROMPT.to_string()],
+            messages: crate::compact::request_messages(&self.messages),
+            tools: Vec::new(),
+            max_tokens: self.max_tokens,
+            temperature: None,
+            thinking_budget: None,
+        };
+
+        let mut stream = match self.open_stream(request, tx, cancel).await {
+            Ok(stream) => stream,
+            Err(AppError::Cancelled) => {
+                let _ = tx
+                    .send(AgentEvent::CompactEnd(CompactOutcome::Cancelled))
+                    .await;
+                return Ok(CompactOutcome::Cancelled);
+            }
+            Err(error) => return Err(error),
+        };
+
+        let mut summary = String::new();
+        let mut stop_reason = StopReason::EndTurn;
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(ProviderEvent::TextDelta(text)) => summary.push_str(&text),
+                Ok(ProviderEvent::Usage { input, output }) => {
+                    let _ = tx.send(AgentEvent::Usage { input, output }).await;
+                }
+                Ok(ProviderEvent::MessageStop {
+                    stop_reason: reason,
+                }) => stop_reason = reason,
+                Ok(_) => {}
+                Err(error) => {
+                    let _ = tx.send(AgentEvent::Error(error.to_string())).await;
+                    return Err(error.into());
+                }
+            }
+        }
+
+        if cancel.is_cancelled() {
+            let _ = tx
+                .send(AgentEvent::CompactEnd(CompactOutcome::Cancelled))
+                .await;
+            return Ok(CompactOutcome::Cancelled);
+        }
+
+        let summary = summary.trim();
+        if summary.is_empty() {
+            let message = "the model returned an empty summary";
+            let _ = tx.send(AgentEvent::Error(message.to_string())).await;
+            return Err(AppError::runtime(message));
+        }
+
+        if let Some(session) = &self.session {
+            let mut session = session.lock().await;
+            if let Err(error) = session.append_compact(summary) {
+                let message = format!("cannot save compaction: {error}");
+                let _ = tx.send(AgentEvent::Error(message.clone())).await;
+                return Err(AppError::runtime(message));
+            }
+        }
+
+        self.messages = vec![crate::compact::summary_message(summary)];
+        let report = CompactReport {
+            messages_before,
+            messages_after: self.messages.len(),
+            tokens_before,
+            tokens_after: estimate_tokens(&self.messages),
+            summary_chars: summary.chars().count(),
+            truncated: stop_reason == StopReason::MaxTokens,
+        };
+        let outcome = CompactOutcome::Compacted(report);
+        let _ = tx.send(AgentEvent::CompactEnd(outcome.clone())).await;
+        Ok(outcome)
     }
 
     async fn record(&mut self, message: Message) {
@@ -794,5 +903,176 @@ mod tests {
         let cancel = CancellationToken::new();
         let error = agent.run_turn("loop", &tx, &cancel).await.unwrap_err();
         assert_eq!(error.exit_code(), 7);
+    }
+
+    #[tokio::test]
+    async fn compact_replaces_history_with_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::simple("summary text"));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.messages = vec![
+            Message::user("old question"),
+            Message::assistant_text("old answer"),
+        ];
+
+        let (tx, mut rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let outcome = agent.compact(&tx, &cancel).await.unwrap();
+
+        let report = match outcome {
+            CompactOutcome::Compacted(report) => report,
+            other => panic!("expected compacted, got {other:?}"),
+        };
+        assert_eq!(report.messages_before, 2);
+        assert_eq!(report.messages_after, 1);
+        assert!(!report.truncated);
+        assert_eq!(provider.calls(), 1);
+        assert_eq!(agent.messages().len(), 1);
+        assert!(crate::compact::is_summary_message(&agent.messages()[0]));
+        assert!(agent.messages()[0].text().contains("summary text"));
+
+        let mut starts = 0;
+        let mut ends = 0;
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                AgentEvent::CompactStart { messages, .. } => {
+                    starts += 1;
+                    assert_eq!(messages, 2);
+                }
+                AgentEvent::CompactEnd(CompactOutcome::Compacted(_)) => ends += 1,
+                _ => {}
+            }
+        }
+        assert_eq!((starts, ends), (1, 1));
+    }
+
+    #[tokio::test]
+    async fn compact_empty_history_does_not_call_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::simple("unused"));
+        let mut agent = agent(provider.clone(), dir.path());
+
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let outcome = agent.compact(&tx, &cancel).await.unwrap();
+
+        assert!(matches!(outcome, CompactOutcome::Empty));
+        assert_eq!(provider.calls(), 0);
+        assert!(agent.messages().is_empty());
+    }
+
+    #[tokio::test]
+    async fn compact_builds_single_flattened_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::simple("summary"));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.messages = vec![
+            Message::user("FIRST GOAL"),
+            Message::assistant_text("did work"),
+        ];
+
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        agent.compact(&tx, &cancel).await.unwrap();
+
+        let request = provider.last_request().expect("request was captured");
+        assert!(request.tools.is_empty());
+        assert_eq!(request.messages.len(), 1);
+        assert!(request.system[0].contains("handoff summary"));
+        let text = request.messages[0].text();
+        assert!(text.contains("FIRST GOAL"));
+        assert!(text.contains("did work"));
+        assert!(text.contains(crate::compact::INSTRUCTION));
+    }
+
+    #[tokio::test]
+    async fn compact_keeps_history_on_empty_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::new(vec![vec![
+            ProviderEvent::MessageStop {
+                stop_reason: StopReason::EndTurn,
+            },
+        ]]));
+        let mut agent = agent(provider, dir.path());
+        agent.messages = vec![Message::user("keep me")];
+
+        let (tx, mut rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        assert!(agent.compact(&tx, &cancel).await.is_err());
+
+        assert_eq!(agent.messages().len(), 1);
+        assert_eq!(agent.messages()[0].text(), "keep me");
+
+        let mut saw_error = false;
+        while let Ok(event) = rx.try_recv() {
+            if matches!(event, AgentEvent::Error(_)) {
+                saw_error = true;
+            }
+        }
+        assert!(saw_error);
+    }
+
+    #[tokio::test]
+    async fn compact_marks_truncated_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::new(vec![vec![
+            ProviderEvent::TextDelta("partial summary".into()),
+            ProviderEvent::MessageStop {
+                stop_reason: StopReason::MaxTokens,
+            },
+        ]]));
+        let mut agent = agent(provider, dir.path());
+        agent.messages = vec![Message::user("long history")];
+
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let outcome = agent.compact(&tx, &cancel).await.unwrap();
+
+        match outcome {
+            CompactOutcome::Compacted(report) => assert!(report.truncated),
+            other => panic!("expected compacted, got {other:?}"),
+        }
+        assert!(agent.messages()[0].text().contains("partial summary"));
+    }
+
+    #[tokio::test]
+    async fn compact_retries_transient_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::with_failures(
+            vec![ProviderError::from_status(429, "{}")],
+            vec![vec![
+                ProviderEvent::TextDelta("summary".into()),
+                ProviderEvent::MessageStop {
+                    stop_reason: StopReason::EndTurn,
+                },
+            ]],
+        ));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.retry = fast_retry();
+        agent.messages = vec![Message::user("history")];
+
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        let outcome = agent.compact(&tx, &cancel).await.unwrap();
+
+        assert!(matches!(outcome, CompactOutcome::Compacted(_)));
+        assert_eq!(provider.calls(), 2, "one failure plus one retry");
+    }
+
+    #[tokio::test]
+    async fn compact_cancel_before_request() {
+        let dir = tempfile::tempdir().unwrap();
+        let provider = Arc::new(MockProvider::simple("unused"));
+        let mut agent = agent(provider.clone(), dir.path());
+        agent.messages = vec![Message::user("history")];
+
+        let (tx, _rx) = mpsc::channel(32);
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let outcome = agent.compact(&tx, &cancel).await.unwrap();
+
+        assert!(matches!(outcome, CompactOutcome::Cancelled));
+        assert_eq!(provider.calls(), 0);
+        assert_eq!(agent.messages().len(), 1);
     }
 }

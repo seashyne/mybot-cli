@@ -6,7 +6,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::agent::{Agent, AgentEvent};
+use crate::agent::{Agent, AgentEvent, CompactOutcome};
 use crate::config::PermissionMode;
 use crate::permissions::Decision;
 use crate::tools::TodoItem;
@@ -174,6 +174,34 @@ impl App {
                     "retrying {attempt}/{max_retries} in {:.1}s — {error}",
                     delay_ms as f64 / 1000.0
                 ));
+            }
+            AgentEvent::CompactStart { messages, tokens } => {
+                self.info(format!(
+                    "compacting {messages} messages (~{tokens} tokens)…"
+                ));
+            }
+            AgentEvent::CompactEnd(outcome) => {
+                self.busy = false;
+                self.streaming_active = false;
+                match outcome {
+                    CompactOutcome::Compacted(report) => {
+                        let suffix = if report.truncated {
+                            " (summary truncated)"
+                        } else {
+                            ""
+                        };
+                        self.transcript.push(Entry::Info(format!(
+                            "── compacted {} messages → summary · ~{} → ~{} tokens{} ──",
+                            report.messages_before,
+                            report.tokens_before,
+                            report.tokens_after,
+                            suffix
+                        )));
+                        self.info("conversation compacted");
+                    }
+                    CompactOutcome::Empty => self.info("nothing to compact yet"),
+                    CompactOutcome::Cancelled => self.info("compaction cancelled"),
+                }
             }
             AgentEvent::Done { .. } => {
                 self.finish_streaming();
@@ -418,7 +446,26 @@ impl App {
                     self.status.output_tokens
                 )));
             }
-            "/compact" => self.info("/compact is not implemented yet"),
+            "/compact" => {
+                self.busy = true;
+                self.streaming_active = false;
+                self.streaming.clear();
+                self.thinking_chars = 0;
+                self.cancel = CancellationToken::new();
+                self.auto_scroll = true;
+                self.scroll_from_bottom = 0;
+
+                let agent = ctx.agent.clone();
+                let tx = ctx.tx.clone();
+                let cancel = self.cancel.clone();
+
+                tokio::spawn(async move {
+                    let mut agent = agent.lock().await;
+                    // Failures are reported through AgentEvent::Error.
+                    let _ = agent.compact(&tx, &cancel).await;
+                });
+                self.info("compacting…");
+            }
             "/init" => {
                 let path = self.cwd.join("AGENTS.md");
                 if path.exists() {
@@ -452,6 +499,7 @@ fn truncate(text: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::{CompactOutcome, CompactReport};
     use crate::protocol::StopReason;
 
     fn app() -> App {
@@ -587,5 +635,52 @@ mod tests {
             stop_reason: StopReason::EndTurn,
         });
         assert!(!app.busy);
+    }
+
+    #[test]
+    fn compact_events_clear_busy_and_add_boundary() {
+        let mut app = app();
+        app.busy = true;
+
+        app.handle_agent(AgentEvent::CompactStart {
+            messages: 6,
+            tokens: 120,
+        });
+        let (info, _) = app.info.clone().expect("info should be set");
+        assert!(info.contains("compacting 6 messages"), "got {info}");
+
+        app.handle_agent(AgentEvent::CompactEnd(CompactOutcome::Compacted(
+            CompactReport {
+                messages_before: 6,
+                messages_after: 1,
+                tokens_before: 120,
+                tokens_after: 15,
+                summary_chars: 60,
+                truncated: false,
+            },
+        )));
+        assert!(!app.busy);
+
+        match app.transcript.last() {
+            Some(Entry::Info(text)) => {
+                assert!(text.contains("compacted 6 messages"), "got {text}");
+                assert!(text.contains("~120 → ~15 tokens"), "got {text}");
+            }
+            _ => panic!("expected compact boundary info"),
+        }
+    }
+
+    #[test]
+    fn compact_empty_and_cancelled_clear_busy() {
+        let mut app = app();
+        app.busy = true;
+        app.handle_agent(AgentEvent::CompactEnd(CompactOutcome::Empty));
+        assert!(!app.busy);
+        assert!(app.info.as_ref().unwrap().0.contains("nothing to compact"));
+
+        app.busy = true;
+        app.handle_agent(AgentEvent::CompactEnd(CompactOutcome::Cancelled));
+        assert!(!app.busy);
+        assert!(app.info.as_ref().unwrap().0.contains("cancelled"));
     }
 }

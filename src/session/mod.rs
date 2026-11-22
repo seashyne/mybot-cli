@@ -26,6 +26,8 @@ fn default_version() -> u32 {
 enum Entry {
     Header(SessionHeader),
     Message { message: Message },
+    /// A compaction replaces every message before it with one summary.
+    Compact { summary: String },
 }
 
 pub struct Session {
@@ -71,6 +73,12 @@ impl Session {
             match serde_json::from_str::<Entry>(&line) {
                 Ok(Entry::Header(value)) => header = Some(value),
                 Ok(Entry::Message { message }) => messages.push(message),
+                Ok(Entry::Compact { summary }) => {
+                    if !summary.trim().is_empty() {
+                        messages.clear();
+                        messages.push(crate::compact::summary_message(&summary));
+                    }
+                }
                 Err(_) => continue,
             }
         }
@@ -96,6 +104,22 @@ impl Session {
             .append(true)
             .open(&self.path)?;
         writeln!(file, "{line}")?;
+        Ok(())
+    }
+
+    /// Append a compaction marker and replace the in-memory history with the
+    /// summary. The ledger keeps every earlier line; replay stops at the marker.
+    pub fn append_compact(&mut self, summary: &str) -> crate::error::Result<()> {
+        let line = serde_json::to_string(&Entry::Compact {
+            summary: summary.to_string(),
+        })?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
+        writeln!(file, "{line}")?;
+        self.messages.clear();
+        self.messages.push(crate::compact::summary_message(summary));
         Ok(())
     }
 
@@ -140,12 +164,18 @@ impl Session {
     /// First user message, trimmed to one short line.
     pub fn title(&self) -> String {
         for message in &self.messages {
+            if crate::compact::is_summary_message(message) {
+                continue;
+            }
             if let Message::User { content } = message {
                 let first_line = content.lines().next().unwrap_or_default().trim();
                 if !first_line.is_empty() {
                     return first_line.chars().take(60).collect();
                 }
             }
+        }
+        if self.messages.iter().any(crate::compact::is_summary_message) {
+            return "(compacted session)".to_string();
         }
         "(empty session)".to_string()
     }
@@ -260,5 +290,63 @@ mod tests {
     fn missing_session_errors() {
         let _guard = with_home();
         assert!(Session::open("does-not-exist").is_err());
+    }
+
+    #[test]
+    fn compact_entry_replays_only_summary() {
+        let _guard = with_home();
+        let cwd = std::env::temp_dir();
+        let mut session = Session::create(&cwd, "mock", "mock-model").unwrap();
+        session.append(&Message::user("old question")).unwrap();
+        session
+            .append(&Message::assistant_text("old answer"))
+            .unwrap();
+        session.append_compact("handoff summary").unwrap();
+
+        assert_eq!(session.messages.len(), 1);
+        assert!(session.messages[0].text().contains("handoff summary"));
+        assert_eq!(session.title(), "(compacted session)");
+
+        let loaded = Session::open(session.id()).unwrap();
+        assert_eq!(loaded.messages.len(), 1);
+        assert!(loaded.messages[0].text().contains("handoff summary"));
+        assert!(!loaded.messages[0].text().contains("old question"));
+    }
+
+    #[test]
+    fn multiple_compactions_keep_latest_summary() {
+        let _guard = with_home();
+        let cwd = std::env::temp_dir();
+        let mut session = Session::create(&cwd, "mock", "mock-model").unwrap();
+        session.append(&Message::user("before")).unwrap();
+        session.append_compact("first summary").unwrap();
+        session.append(&Message::user("after")).unwrap();
+        session.append_compact("second summary").unwrap();
+
+        let loaded = Session::open(session.id()).unwrap();
+        assert_eq!(loaded.messages.len(), 1);
+        assert!(loaded.messages[0].text().contains("second summary"));
+        assert!(!loaded.messages[0].text().contains("first summary"));
+    }
+
+    #[test]
+    fn messages_after_compaction_still_replay() {
+        let _guard = with_home();
+        let cwd = std::env::temp_dir();
+        let mut session = Session::create(&cwd, "mock", "mock-model").unwrap();
+        session.append_compact("summary of earlier work").unwrap();
+        session.append(&Message::user("new question")).unwrap();
+        session
+            .append(&Message::assistant_text("new answer"))
+            .unwrap();
+
+        let loaded = Session::open(session.id()).unwrap();
+        assert_eq!(loaded.messages.len(), 3);
+        assert!(
+            loaded.messages[0]
+                .text()
+                .contains("summary of earlier work")
+        );
+        assert_eq!(loaded.title(), "new question");
     }
 }
