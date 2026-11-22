@@ -245,8 +245,14 @@ async fn provider_command(command: &ProviderCommand) -> Result<()> {
 }
 
 async fn provider_test(name: Option<&str>) -> Result<()> {
-    let config = Config::load()?;
-    let resolved = config.resolve(name)?;
+    let mut config = Config::load()?;
+    if let Some(provider) = name {
+        if !config.providers.contains_key(provider) {
+            return Err(AppError::usage(format!("unknown provider '{provider}'")));
+        }
+        config.default_provider = Some(provider.to_string());
+    }
+    let resolved = config.resolve(None)?;
     let provider = mybot::providers::build(&resolved)?;
 
     let request = mybot::providers::CompletionRequest {
