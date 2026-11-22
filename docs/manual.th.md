@@ -73,7 +73,7 @@ curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh 
 
 # เลือกเวอร์ชัน
 curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
-  | sh -s -- --version v0.2.0
+  | sh -s -- --version v0.3.0
 
 # ถอนการติดตั้ง
 curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
@@ -88,7 +88,7 @@ mybot
 ```
 
 ตัว package จะดาวน์โหลด binary ให้ตอนรันครั้งแรก (ใช้ `npx mybot-cli` ได้ด้วย)
-กำหนดเวอร์ชันด้วย `MYBOT_VERSION=v0.2.0`
+กำหนดเวอร์ชันด้วย `MYBOT_VERSION=v0.3.0`
 
 ### 3.3 สิ่งที่ต้องมี (สำหรับ build จาก source)
 
@@ -196,7 +196,7 @@ docker run --rm --platform linux/arm64 \
 mybot version            # เวอร์ชัน, commit, target, path
 mybot update --check     # ดูว่ามี release ใหม่ไหม
 mybot update             # ดาวน์โหลดและติดตั้งทับ binary เดิม
-mybot update --tag v0.2.0
+mybot update --tag v0.3.0
 mybot update --force     # ติดตั้งซ้ำแม้เวอร์ชันเดียวกัน
 ```
 
