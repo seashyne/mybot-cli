@@ -18,29 +18,39 @@ jobs:
         include:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            cmake_arch: ""
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+            cmake_arch: ""
           - os: macos-13
             target: x86_64-apple-darwin
-          - os: macos-14
+            cmake_arch: x86_64
+          # macOS arm64 is cross-compiled: the arm64 runner label is not
+          # available on every plan, but clang on macos-13 can target arm64.
+          - os: macos-13
             target: aarch64-apple-darwin
+            cmake_arch: arm64
     steps:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked
+        env:
+          CMAKE_OSX_ARCHITECTURES: ${{ matrix.cmake_arch }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package
         run: |
           set -eu
-          cp target/release/mybot "mybot-${{ matrix.target }}"
-          tar -czf "mybot-${{ matrix.target }}.tar.gz" -C target/release mybot
+          cp "target/${{ matrix.target }}/release/mybot" "mybot-${{ matrix.target }}"
+          tar -czf "mybot-${{ matrix.target }}.tar.gz" "mybot-${{ matrix.target }}"
           ls -lh "mybot-${{ matrix.target }}" "mybot-${{ matrix.target }}.tar.gz"
 
       - uses: actions/upload-artifact@v4
