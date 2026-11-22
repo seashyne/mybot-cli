@@ -65,12 +65,9 @@ pub fn persist_rule(rule: &Rule) -> crate::error::Result<()> {
 
     config.permissions.rules.push(rule.clone());
 
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let text = toml::to_string_pretty(&config)
         .map_err(|error| crate::error::AppError::config(format!("cannot serialise config: {error}")))?;
-    std::fs::write(&path, text)?;
+    crate::config::schema::write_restricted(&path, &text)?;
     Ok(())
 }
 

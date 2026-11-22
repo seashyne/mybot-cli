@@ -45,7 +45,11 @@ fn maps_targets_to_release_assets() {
         platform::asset_name_for("aarch64-apple-darwin").unwrap(),
         "mybot-aarch64-apple-darwin"
     );
-    assert!(platform::asset_name_for("x86_64-pc-windows-msvc").is_err());
+    assert_eq!(
+        platform::asset_name_for("x86_64-pc-windows-msvc").unwrap(),
+        "mybot-x86_64-pc-windows-msvc.exe"
+    );
+    assert!(platform::asset_name_for("riscv64gc-unknown-linux-gnu").is_err());
 }
 
 #[test]

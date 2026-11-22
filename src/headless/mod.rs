@@ -65,8 +65,9 @@ pub async fn run(options: ExecOptions) -> Result<()> {
     let messages = session.messages.clone();
     let session = Arc::new(Mutex::new(session));
 
-    let permissions = Arc::new(PermissionEngine::new(
+    let permissions = Arc::new(PermissionEngine::with_sandbox(
         options.permission,
+        config.permissions.sandbox,
         cwd.clone(),
         config.permissions.rules.clone(),
     ));

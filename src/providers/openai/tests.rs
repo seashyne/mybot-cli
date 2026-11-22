@@ -2,7 +2,7 @@ use serde_json::json;
 
 use super::stream::{map_finish_reason, normalize_event};
 use super::{build_body, completions_url, messages_to_wire, models_url, pick_model};
-use crate::protocol::{Message, StopReason};
+use crate::protocol::{ImageAttachment, Message, StopReason};
 use crate::providers::sse::SseEvent;
 use crate::providers::{CompletionRequest, ProviderEvent, ToolSpec};
 
@@ -142,4 +142,23 @@ fn reasoning_effort_is_sent_only_when_thinking_budget_is_positive() {
     request.thinking_budget = Some(32_768);
     let body = build_body(&request);
     assert_eq!(body["reasoning_effort"], "high");
+}
+
+#[test]
+fn user_images_become_openai_image_url_parts() {
+    let msgs = vec![Message::user_with_images(
+        "inspect",
+        vec![ImageAttachment {
+            name: "ui.png".into(),
+            media_type: "image/png".into(),
+            data_base64: "AQID".into(),
+        }],
+    )];
+    let wire = messages_to_wire(&[], &msgs);
+    assert_eq!(wire[0]["content"][0]["type"], "text");
+    assert_eq!(wire[0]["content"][1]["type"], "image_url");
+    assert_eq!(
+        wire[0]["content"][1]["image_url"]["url"],
+        "data:image/png;base64,AQID"
+    );
 }

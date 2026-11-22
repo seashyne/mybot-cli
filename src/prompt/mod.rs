@@ -33,6 +33,7 @@ const BASE_PROMPT: &str = r#"You are mybot, a terminal coding agent working insi
 - `edit` replaces exact text; include enough context for a unique match.
 - `bash` runs shell commands in the project directory.
 - `grep` searches file contents, `glob` finds files by pattern.
+- `web_fetch` fetches public http/https documentation or pages (asks permission).
 - `memory` reads and updates durable project notes.
 - `agent` delegates a focused task to a sub-agent when `<subagents>` is listed.
 - Team tools `task_create`, `task_list`, `task_update`, `send_message`, `check_messages`, and `spawn_teammate` coordinate background teammates.

@@ -74,7 +74,7 @@ impl Agent {
             let path = tool
                 .path_arg(&args)
                 .map(|raw| crate::tools::resolve_path(&self.cwd, &raw));
-            let detail = permission_detail(&invocation.name, &args);
+            let detail = permission_detail(&invocation.name, &args, &self.cwd);
             let request = crate::permissions::request_for(
                 &invocation.name,
                 summary.clone(),
@@ -115,6 +115,8 @@ impl Agent {
             cwd: self.cwd.clone(),
             cancel: cancel.clone(),
             todos: self.todos.clone(),
+            checkpoints: self.checkpoints.clone(),
+            sandbox: self.permissions.sandbox(),
         };
 
         let mut cursor = 0;
@@ -241,30 +243,21 @@ fn error_result(invocation: &ToolInvocation, message: String) -> ToolResult {
     }
 }
 
-fn permission_detail(tool: &str, args: &Value) -> String {
+fn permission_detail(tool: &str, args: &Value, cwd: &std::path::Path) -> String {
+    if let Some(preview) = crate::tools::diff::preview(tool, args, cwd) {
+        return preview;
+    }
     match tool {
         "bash" => args
             .get("command")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string(),
-        "write" => {
-            let path = args.get("path").and_then(Value::as_str).unwrap_or("?");
-            let size = args
-                .get("content")
-                .and_then(Value::as_str)
-                .map(str::len)
-                .unwrap_or(0);
-            format!("write {path} ({size} bytes)")
-        }
-        "edit" => {
-            let path = args
-                .get("path")
-                .or_else(|| args.get("file_path"))
-                .and_then(Value::as_str)
-                .unwrap_or("?");
-            format!("edit {path}")
-        }
+        "web_fetch" => args
+            .get("url")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
         "read" | "grep" | "glob" => {
             let path = args.get("path").and_then(Value::as_str).unwrap_or(".");
             format!("{tool} {path}")

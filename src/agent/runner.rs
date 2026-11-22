@@ -7,9 +7,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{AppError, Result};
 use crate::permissions::{PermissionEngine, Prompter};
-use crate::protocol::{Message, StopReason};
+use crate::protocol::{ImageAttachment, Message, StopReason};
 use crate::providers::{CompletionRequest, EventStream, Provider, ProviderEvent, RetryPolicy};
 use crate::session::Session;
+use crate::tools::checkpoint::CheckpointStore;
 use crate::tools::{TodoItem, ToolRegistry};
 
 use super::assembler::Assembler;
@@ -61,6 +62,7 @@ pub struct Agent {
     session: Option<Arc<Mutex<Session>>>,
     messages: Vec<Message>,
     todos: Arc<Mutex<Vec<TodoItem>>>,
+    checkpoints: CheckpointStore,
     retry: RetryPolicy,
 }
 
@@ -80,6 +82,7 @@ impl Agent {
             session: options.session,
             messages: options.messages,
             todos: Arc::new(Mutex::new(Vec::new())),
+            checkpoints: CheckpointStore::new(),
             retry: options.retry,
         }
     }
@@ -104,6 +107,10 @@ impl Agent {
         self.todos.clone()
     }
 
+    pub fn checkpoints(&self) -> CheckpointStore {
+        self.checkpoints.clone()
+    }
+
     /// Swap the model client at runtime without touching the conversation.
     pub fn set_provider(&mut self, options: ProviderSwap) {
         self.provider = options.provider;
@@ -124,7 +131,20 @@ impl Agent {
         tx: &mpsc::Sender<AgentEvent>,
         cancel: &CancellationToken,
     ) -> Result<StopReason> {
-        self.record(Message::user(input)).await;
+        self.run_turn_with_images(input, Vec::new(), tx, cancel)
+            .await
+    }
+
+    /// Run one user turn with optional attached images.
+    pub async fn run_turn_with_images(
+        &mut self,
+        input: &str,
+        images: Vec<ImageAttachment>,
+        tx: &mpsc::Sender<AgentEvent>,
+        cancel: &CancellationToken,
+    ) -> Result<StopReason> {
+        self.checkpoints.begin_turn(input);
+        self.record(Message::user_with_images(input, images)).await;
 
         let mut step = 0usize;
         let final_stop;

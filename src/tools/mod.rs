@@ -1,13 +1,17 @@
 pub mod bash;
+pub mod checkpoint;
+pub mod diff;
 pub mod edit;
 pub mod edit_match;
 pub mod glob;
 pub mod grep;
 pub mod memory;
 pub mod read;
+pub mod sandbox;
 pub mod skill;
 pub mod todo;
 pub mod truncate;
+pub mod web;
 pub mod write;
 
 use std::collections::BTreeMap;
@@ -64,6 +68,21 @@ pub struct ToolCtx {
     pub cwd: PathBuf,
     pub cancel: CancellationToken,
     pub todos: Arc<Mutex<Vec<TodoItem>>>,
+    pub checkpoints: checkpoint::CheckpointStore,
+    pub sandbox: crate::config::SandboxMode,
+}
+
+impl ToolCtx {
+    #[cfg(test)]
+    pub fn for_test(cwd: PathBuf) -> Self {
+        Self {
+            cwd,
+            cancel: CancellationToken::new(),
+            todos: Arc::new(Mutex::new(Vec::new())),
+            checkpoints: checkpoint::CheckpointStore::new(),
+            sandbox: crate::config::SandboxMode::Auto,
+        }
+    }
 }
 
 #[async_trait]
@@ -126,6 +145,7 @@ impl ToolRegistry {
         registry.register(Arc::new(grep::GrepTool));
         registry.register(Arc::new(todo::TodoWriteTool));
         registry.register(Arc::new(memory::MemoryTool::new()));
+        registry.register(Arc::new(web::WebFetchTool));
         registry
     }
 

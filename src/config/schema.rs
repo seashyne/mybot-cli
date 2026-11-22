@@ -64,6 +64,8 @@ pub struct PermissionsConfig {
     #[serde(default)]
     pub mode: PermissionMode,
     #[serde(default)]
+    pub sandbox: super::SandboxMode,
+    #[serde(default)]
     pub rules: Vec<Rule>,
 }
 
@@ -71,6 +73,7 @@ impl Default for PermissionsConfig {
     fn default() -> Self {
         Self {
             mode: PermissionMode::Auto,
+            sandbox: super::SandboxMode::Auto,
             rules: Vec::new(),
         }
     }
@@ -141,13 +144,10 @@ impl Config {
 
     pub fn save(&self) -> crate::error::Result<()> {
         let path = super::paths::config_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
         let text = toml::to_string_pretty(self).map_err(|e| {
             crate::error::AppError::config(format!("cannot serialise config: {e}"))
         })?;
-        std::fs::write(&path, text)?;
+        write_restricted(&path, &text)?;
         Ok(())
     }
 
@@ -259,6 +259,42 @@ impl Config {
     }
 }
 
+/// Write a sensitive config file with owner-only permissions (`0600` on Unix).
+pub fn write_restricted(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        let created = !parent.exists();
+        std::fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        if created {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, text)
+    }
+}
+
 fn resolve_api_key(config: &ProviderConfig) -> Option<String> {
     if let Some(key) = config.api_key.as_ref().filter(|k| !k.trim().is_empty()) {
         return Some(key.trim().to_string());
@@ -313,5 +349,22 @@ mod tests {
         assert_eq!(PermissionMode::parse("smart"), Some(PermissionMode::Auto));
         assert_eq!(PermissionMode::parse("bypass"), Some(PermissionMode::Full));
         assert_eq!(PermissionMode::parse("nope"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restricted_write_sets_owner_only_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("sub/config.toml");
+        write_restricted(&file, "api_key = \"secret\"").unwrap();
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        let dir_mode = std::fs::metadata(file.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(dir_mode, 0o700);
     }
 }

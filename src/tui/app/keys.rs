@@ -13,6 +13,20 @@ impl App {
             return;
         }
         if self.permission.is_none() {
+            if let Some(result) = super::images::try_load_pasted_image(&self.cwd, text) {
+                match result {
+                    Ok(img) => {
+                        let name = img.name.clone();
+                        self.pending_images.push(img);
+                        self.info(format!(
+                            "attached {name} ({} total)",
+                            self.pending_images.len()
+                        ));
+                    }
+                    Err(err) => self.info(err),
+                }
+                return;
+            }
             self.composer.insert_str(text);
             self.sync_palette();
             self.sync_mention(ctx);
@@ -51,12 +65,17 @@ impl App {
                     self.quit = true;
                 }
             }
+            KeyCode::Char('o') if control => self.toggle_tool_expansion(),
+            KeyCode::Char('v') if control || alt => self.attach_clipboard_image(),
             KeyCode::Esc => {
                 if self.busy {
                     self.cancel.cancel();
                     self.info("cancelling…");
-                } else {
+                } else if !self.composer.is_empty() {
                     self.composer.clear();
+                } else if !self.pending_images.is_empty() {
+                    self.pending_images.clear();
+                    self.info("cleared attached images");
                 }
             }
             KeyCode::Enter if shift || alt => self.composer.newline(),
@@ -116,6 +135,31 @@ impl App {
     fn answer_permission(&mut self, decision: Decision) {
         if let Some(modal) = self.permission.take() {
             modal.answer(decision);
+        }
+    }
+
+    pub(crate) fn toggle_tool_expansion(&mut self) {
+        let any_expanded = self.transcript.iter().any(|entry| {
+            matches!(entry, super::Entry::Tool { expanded: true, .. })
+        });
+        let target = !any_expanded;
+        let mut count = 0usize;
+        for entry in &mut self.transcript {
+            if let super::Entry::Tool {
+                expanded, content, ..
+            } = entry
+                && !content.trim().is_empty()
+            {
+                *expanded = target;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            self.info("no tool outputs to expand yet");
+        } else if target {
+            self.info(format!("expanded {count} tool output(s)"));
+        } else {
+            self.info("collapsed tool outputs");
         }
     }
 }

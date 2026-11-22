@@ -450,6 +450,8 @@ mybot provider remove local
 | `/model [provider/model]` | เปิด picker เลือก model (กรองได้, ดึงรายการจริงจาก API) |
 | `/effort [off\|low\|medium\|high]` | ดูหรือปรับระดับ reasoning effort (บันทึกทันที) |
 | `/permissions [ask\|auto\|full]` | ดูหรือเปลี่ยน permission mode (บันทึกทันที) |
+| `/sandbox [off\|auto\|strict]` | ดูหรือเปลี่ยนโหมด OS sandbox สำหรับคำสั่ง shell |
+| `/image [path\|paste\|clear]` | แนบไฟล์รูปภาพหรือรูปจาก clipboard เข้าใน prompt |
 | `/tools` | แสดง tools ที่โมเดลเรียกได้ พร้อมโหมดการทำงาน |
 | `/context` | แสดงขนาด system prompt, บทสนทนา, tokens |
 | `/sessions` | แสดง session ล่าสุด 10 รายการ |
@@ -458,6 +460,7 @@ mybot provider remove local
 | `/version` | แสดงเวอร์ชัน, commit, target และ path ของ binary |
 | `/compact` | สรุปบทสนทนาและแทน history ด้วย summary |
 | `/retry` | ส่ง prompt ล่าสุดซ้ำ |
+| `/undo` หรือ `/rewind` | ย้อนกลับการแก้ไข/สร้างไฟล์จาก turn ล่าสุด |
 | `/stop` หรือ `/cancel` | ยกเลิก turn ที่กำลังทำงาน |
 | `/export [path]` | เขียน transcript เป็นไฟล์ markdown |
 | `/config` | แสดง path ของ config, providers และ rules |

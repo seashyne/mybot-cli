@@ -54,6 +54,8 @@ fn ctx() -> ToolCtx {
         cwd: std::env::temp_dir(),
         cancel: CancellationToken::new(),
         todos: Arc::new(Mutex::new(Vec::new())),
+        checkpoints: crate::tools::checkpoint::CheckpointStore::new(),
+        sandbox: crate::config::SandboxMode::Auto,
     }
 }
 

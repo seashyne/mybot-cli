@@ -120,14 +120,18 @@ fn transcript_lines_for(app: &App, width: usize) -> Vec<Line<'static>> {
                 } else {
                     ("✓", theme::TOOL)
                 };
-                lines.push(Line::from(vec![
+                let mut header = vec![
                     Span::styled(format!("{marker} "), Style::default().fg(color)),
                     Span::styled(
                         name.clone(),
                         Style::default().fg(color).add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(format!("  {summary}"), Style::default().fg(theme::DIM)),
-                ]));
+                ];
+                if !*running && !*expanded && !*is_error && !content.trim().is_empty() {
+                    header.push(Span::styled("  (Ctrl+O)", Style::default().fg(theme::DIM)));
+                }
+                lines.push(Line::from(header));
                 if *expanded || *is_error {
                     let limit = if *expanded { 40 } else { 6 };
                     for line in content.lines().take(limit) {

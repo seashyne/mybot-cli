@@ -12,8 +12,11 @@ pub(super) fn draw_permission(frame: &mut Frame, app: &App, area: Rect) {
         return;
     };
 
-    let width = area.width.saturating_sub(8).clamp(20, 80);
-    let height = area.height.saturating_sub(4).clamp(6, 18);
+    let detail_lines: Vec<&str> = modal.request.detail.lines().collect();
+    let width = area.width.saturating_sub(8).clamp(24, 86);
+    let height = ((detail_lines.len() as u16) + 7)
+        .clamp(8, 24)
+        .min(area.height.saturating_sub(2));
     let rect = centered(area, width, height);
 
     frame.render_widget(Clear, rect);
@@ -34,11 +37,21 @@ pub(super) fn draw_permission(frame: &mut Frame, app: &App, area: Rect) {
         )),
         Line::from(""),
     ];
-    for line in modal.request.detail.lines().take(8) {
-        lines.push(Line::from(Span::styled(
-            line.to_string(),
-            Style::default().fg(theme::ASSISTANT),
-        )));
+    let max_detail = inner.height.saturating_sub(4) as usize;
+    for line in detail_lines.iter().take(max_detail) {
+        let style = if line.starts_with("--- ")
+            || line.starts_with("+++ ")
+            || line.starts_with("@@ ")
+        {
+            Style::default().fg(theme::USER)
+        } else if line.starts_with("- ") || *line == "-" {
+            Style::default().fg(theme::ERROR)
+        } else if line.starts_with("+ ") || *line == "+" {
+            Style::default().fg(theme::CODE)
+        } else {
+            Style::default().fg(theme::ASSISTANT)
+        };
+        lines.push(Line::from(Span::styled((*line).to_string(), style)));
     }
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(

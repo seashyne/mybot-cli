@@ -12,6 +12,7 @@ use crate::tools::TodoItem;
 use super::composer::Composer;
 use super::permission::PermissionModal;
 
+mod images;
 mod keys;
 mod mention;
 mod palette;
@@ -38,6 +39,7 @@ pub struct Ctx {
     pub agents: Arc<crate::subagents::AgentSet>,
     pub permissions: Arc<crate::permissions::PermissionEngine>,
     pub tools: Arc<crate::tools::ToolRegistry>,
+    pub checkpoints: crate::tools::checkpoint::CheckpointStore,
 }
 
 /// Background work that updates the UI without going through the agent loop.
@@ -58,6 +60,8 @@ pub struct Status {
     pub session: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
 }
 
 pub enum Entry {
@@ -82,6 +86,7 @@ pub struct App {
     pub streaming_active: bool,
     pub thinking_chars: usize,
     pub composer: Composer,
+    pub pending_images: Vec<crate::protocol::ImageAttachment>,
     pub todos: Vec<TodoItem>,
     pub team: Option<crate::team::TeamSnapshot>,
     pub permission: Option<PermissionModal>,
@@ -91,6 +96,7 @@ pub struct App {
     pub(crate) mention_dismissed: Option<(usize, usize)>,
     pub last_prompt: Option<String>,
     pub status: Status,
+    pub step_output_tokens: u64,
     pub busy: bool,
     pub quit: bool,
     pub scroll_from_bottom: u16,
@@ -110,6 +116,7 @@ impl App {
             streaming_active: false,
             thinking_chars: 0,
             composer: Composer::new(),
+            pending_images: Vec::new(),
             todos: Vec::new(),
             team: None,
             permission: None,
@@ -119,6 +126,7 @@ impl App {
             mention_dismissed: None,
             last_prompt: None,
             status,
+            step_output_tokens: 0,
             busy: false,
             quit: false,
             scroll_from_bottom: 0,
@@ -184,6 +192,7 @@ impl App {
             AgentEvent::TurnStart { .. } => {
                 self.streaming_active = true;
                 self.thinking_chars = 0;
+                self.step_output_tokens = 0;
             }
             AgentEvent::TextDelta(text) => self.streaming.push_str(&text),
             AgentEvent::ThinkingDelta(text) => self.thinking_chars += text.len(),
@@ -223,8 +232,14 @@ impl App {
             AgentEvent::Usage { input, output } => {
                 if input > 0 {
                     self.status.input_tokens = input;
+                    self.status.total_input_tokens =
+                        self.status.total_input_tokens.saturating_add(input);
                 }
-                if output > 0 {
+                if output > self.step_output_tokens {
+                    let delta = output - self.step_output_tokens;
+                    self.status.total_output_tokens =
+                        self.status.total_output_tokens.saturating_add(delta);
+                    self.step_output_tokens = output;
                     self.status.output_tokens = output;
                 }
             }
@@ -317,54 +332,6 @@ impl App {
                     return;
                 }
         }
-    }
-
-    pub(super) fn submit(&mut self, ctx: &Ctx) {
-        if self.busy {
-            self.info("wait for the current turn to finish (Esc cancels)");
-            return;
-        }
-
-        let text = self.composer.take();
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-
-        if trimmed.starts_with('/') {
-            self.slash(trimmed, ctx);
-            return;
-        }
-
-        self.transcript.push(Entry::User(trimmed.to_string()));
-        self.start_turn(trimmed.to_string(), ctx);
-    }
-
-    /// Send `prompt` to the model without touching the composer.
-    pub(super) fn start_turn(&mut self, prompt: String, ctx: &Ctx) {
-        if self.busy {
-            self.info("wait for the current turn to finish (Esc cancels)");
-            return;
-        }
-
-        self.busy = true;
-        self.streaming_active = true;
-        self.streaming.clear();
-        self.thinking_chars = 0;
-        self.cancel = CancellationToken::new();
-        self.auto_scroll = true;
-        self.scroll_from_bottom = 0;
-        self.last_prompt = Some(prompt.clone());
-
-        let agent = ctx.agent.clone();
-        let tx = ctx.tx.clone();
-        let cancel = self.cancel.clone();
-
-        tokio::spawn(async move {
-            let mut agent = agent.lock().await;
-            // Errors are reported through AgentEvent::Error.
-            let _ = agent.run_turn(&prompt, &tx, &cancel).await;
-        });
     }
 }
 

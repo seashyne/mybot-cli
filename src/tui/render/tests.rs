@@ -18,6 +18,8 @@ fn app() -> App {
             session: "abc12345".into(),
             input_tokens: 0,
             output_tokens: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         },
         PathBuf::from("/tmp"),
         None,
@@ -325,4 +327,61 @@ fn draws_the_mention_overlay() {
     assert!(text.contains("@ files & plugins"));
     assert!(text.contains("[plugin]"));
     assert!(text.contains("src/tui/render.rs"));
+}
+
+#[test]
+fn draws_permission_modal_with_colored_diff() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+    use ratatui::style::Color;
+
+    let mut app = app();
+    let (tx, _rx) = tokio::sync::oneshot::channel();
+    app.set_permission(
+        crate::permissions::PermissionRequest {
+            tool: "edit".into(),
+            summary: "edit src/lib.rs".into(),
+            detail: "--- src/lib.rs\n+++ src/lib.rs\n@@ edit 1 @@\n- let a = 1;\n+ let a = 2;"
+                .into(),
+            always_rule: None,
+        },
+        tx,
+    );
+
+    let backend = TestBackend::new(90, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let text: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+    assert!(text.contains("- let a = 1;"));
+    assert!(text.contains("+ let a = 2;"));
+    assert!(buffer.content().iter().any(|cell| cell.fg == Color::Red));
+    assert!(buffer.content().iter().any(|cell| cell.fg == Color::Green));
+}
+
+#[test]
+fn composer_title_shows_attached_image_count() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let mut app = app();
+    app.pending_images.push(crate::protocol::ImageAttachment {
+        name: "shot.png".into(),
+        media_type: "image/png".into(),
+        data_base64: "AQID".into(),
+    });
+
+    let backend = TestBackend::new(90, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(text.contains("message · 1 image"));
 }

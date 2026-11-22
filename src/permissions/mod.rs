@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::config::{PermissionMode, Rule, RuleBehavior, RuleMatcher};
+use crate::config::{PermissionMode, Rule, RuleBehavior, RuleMatcher, SandboxMode};
 use bash_rules::BashRisk;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +52,7 @@ impl Prompter for DenyPrompter {
 
 pub struct PermissionEngine {
     mode: std::sync::RwLock<PermissionMode>,
+    sandbox: std::sync::RwLock<SandboxMode>,
     pub cwd: PathBuf,
     rules: Vec<Rule>,
     session_rules: Mutex<Vec<Rule>>,
@@ -59,8 +60,18 @@ pub struct PermissionEngine {
 
 impl PermissionEngine {
     pub fn new(mode: PermissionMode, cwd: PathBuf, rules: Vec<Rule>) -> Self {
+        Self::with_sandbox(mode, SandboxMode::Auto, cwd, rules)
+    }
+
+    pub fn with_sandbox(
+        mode: PermissionMode,
+        sandbox: SandboxMode,
+        cwd: PathBuf,
+        rules: Vec<Rule>,
+    ) -> Self {
         Self {
             mode: std::sync::RwLock::new(mode),
+            sandbox: std::sync::RwLock::new(sandbox),
             cwd,
             rules,
             session_rules: Mutex::new(Vec::new()),
@@ -75,6 +86,14 @@ impl PermissionEngine {
     /// shares the engine).
     pub fn set_mode(&self, mode: PermissionMode) {
         *self.mode.write().unwrap_or_else(|error| error.into_inner()) = mode;
+    }
+
+    pub fn sandbox(&self) -> SandboxMode {
+        *self.sandbox.read().unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub fn set_sandbox(&self, mode: SandboxMode) {
+        *self.sandbox.write().unwrap_or_else(|error| error.into_inner()) = mode;
     }
 
     pub fn rule_count(&self) -> usize {
@@ -229,7 +248,7 @@ pub fn request_for(
             Some(rules::allow_rule(tool, RuleMatcher::Tool, ""))
         }
         "task_create" | "task_list" | "task_update" | "send_message" | "check_messages"
-        | "spawn_teammate" => Some(rules::allow_rule(tool, RuleMatcher::Tool, "")),
+        | "spawn_teammate" | "web_fetch" => Some(rules::allow_rule(tool, RuleMatcher::Tool, "")),
         _ => None,
     };
 

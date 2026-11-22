@@ -35,7 +35,7 @@ pub fn summary_message(summary: &str) -> Message {
 }
 
 pub fn is_summary_message(message: &Message) -> bool {
-    matches!(message, Message::User { content } if content.starts_with(SUMMARY_PREFIX))
+    matches!(message, Message::User { content, .. } if content.starts_with(SUMMARY_PREFIX))
 }
 
 /// One user message containing the flattened conversation and the instruction.
@@ -86,9 +86,13 @@ pub fn build_transcript(messages: &[Message]) -> String {
 
 fn render_message(message: &Message) -> String {
     match message {
-        Message::User { content } => {
+        Message::User { content, images } => {
             let (text, _) = head_tail(content, MAX_MESSAGE_BYTES);
-            format!("[user]\n{text}")
+            if images.is_empty() {
+                format!("[user]\n{text}")
+            } else {
+                format!("[user]\n[attached {} image(s)]\n{text}", images.len())
+            }
         }
         Message::Assistant { content } => {
             let mut parts: Vec<String> = Vec::new();

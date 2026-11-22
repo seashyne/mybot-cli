@@ -1,9 +1,7 @@
-use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde_json::{Value, json};
-use tokio::process::Command;
 
 use super::truncate::head_tail;
 use super::{ExecutionMode, Tool, ToolCtx, ToolOutput, arg_str, arg_u64};
@@ -54,21 +52,14 @@ impl Tool for BashTool {
             .unwrap_or(DEFAULT_TIMEOUT_SECS)
             .clamp(1, MAX_TIMEOUT_SECS);
 
-        let mut cmd = Command::new("bash");
-        cmd.arg("-lc")
-            .arg(command)
-            .current_dir(&ctx.cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env("MYBOT", "1");
-
-        #[cfg(unix)]
-        cmd.process_group(0);
+        let mut cmd = match super::sandbox::build_command(command, &ctx.cwd, ctx.sandbox) {
+            Ok(cmd) => cmd,
+            Err(error) => return ToolOutput::error(error),
+        };
 
         let child = match cmd.spawn() {
             Ok(child) => child,
-            Err(error) => return ToolOutput::error(format!("cannot spawn bash: {error}")),
+            Err(error) => return ToolOutput::error(format!("cannot spawn shell: {error}")),
         };
         let pid = child.id();
 
@@ -168,7 +159,19 @@ fn kill_process_group(pid: Option<u32>) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn kill_process_group(pid: Option<u32>) {
+    if let Some(pid) = pid {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn kill_process_group(_pid: Option<u32>) {}
 
 #[cfg(test)]
@@ -183,6 +186,8 @@ mod tests {
             cwd: dir.to_path_buf(),
             cancel: CancellationToken::new(),
             todos: Arc::new(Mutex::new(Vec::new())),
+            checkpoints: crate::tools::checkpoint::CheckpointStore::new(),
+            sandbox: crate::config::SandboxMode::Auto,
         }
     }
 

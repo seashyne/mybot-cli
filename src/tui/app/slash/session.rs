@@ -14,6 +14,7 @@ impl App {
         }
         self.transcript.clear();
         self.streaming.clear();
+        self.pending_images.clear();
         self.streaming_active = false;
         self.todos.clear();
         self.team = None;
@@ -127,6 +128,31 @@ impl App {
         }
     }
 
+    pub(super) fn undo_command(&mut self, ctx: &Ctx) {
+        if !self.idle() {
+            return;
+        }
+        match ctx.checkpoints.undo_last() {
+            Ok(None) => self.info("nothing to undo"),
+            Ok(Some(report)) => {
+                let mut lines = Vec::new();
+                if !report.label.is_empty() {
+                    lines.push(format!("reverted changes from turn: {}", report.label));
+                }
+                for path in &report.restored {
+                    lines.push(format!("  restored {path}"));
+                }
+                for path in &report.removed {
+                    lines.push(format!("  removed {path}"));
+                }
+                let count = report.restored.len() + report.removed.len();
+                self.transcript.push(Entry::Info(lines.join("\n")));
+                self.info(format!("reverted {count} file(s)"));
+            }
+            Err(error) => self.info(format!("undo failed: {error}")),
+        }
+    }
+
     pub(super) fn stop_command(&mut self) {
         if self.busy {
             self.cancel.cancel();
@@ -143,7 +169,15 @@ fn replay_entries(messages: &[Message]) -> Vec<Entry> {
     let mut entries = Vec::new();
     for message in &messages[start..] {
         match message {
-            Message::User { content } => entries.push(Entry::User(content.clone())),
+            Message::User { content, images } => {
+                if images.is_empty() {
+                    entries.push(Entry::User(content.clone()));
+                } else {
+                    let labels: Vec<String> =
+                        images.iter().map(|i| format!("[image: {}]", i.name)).collect();
+                    entries.push(Entry::User(format!("{} {content}", labels.join(" "))));
+                }
+            }
             Message::Assistant { .. } => {
                 let text = message.text();
                 if !text.trim().is_empty() {

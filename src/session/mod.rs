@@ -167,7 +167,7 @@ impl Session {
             if crate::compact::is_summary_message(message) {
                 continue;
             }
-            if let Message::User { content } = message {
+            if let Message::User { content, .. } = message {
                 let first_line = content.lines().next().unwrap_or_default().trim();
                 if !first_line.is_empty() {
                     return first_line.chars().take(60).collect();

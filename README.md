@@ -14,10 +14,12 @@ mybot exec "explain this repo" --output-format text
 - **Two wire protocols**: Anthropic Messages API and OpenAI-compatible Chat
   Completions, both streaming SSE. Works with Anthropic, OpenAI, MiniMax,
   DeepSeek, OpenRouter, Ollama, and any compatible endpoint.
-- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`, `skill`,
-  `memory`, `agent`, plus `mcp__<server>__<tool>` for MCP servers.
+- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `web_fetch`,
+  `todowrite`, `skill`, `memory`, `agent`, plus `mcp__<server>__<tool>` for MCP
+  servers.
   Reads are capped and line-numbered, edits are atomic and reject ambiguous
-  matches, bash has timeouts and process-group kills.
+  matches, `web_fetch` blocks local/private IPs, and bash has timeouts and
+  process-group kills.
 - **Permissions**: `ask`, `auto`, and `full` modes with persisted allow/deny
   rules, a bash risk classifier, and path containment checks.
 - **Sessions**: append-only JSONL ledgers in `~/.mybot/sessions`, with
@@ -47,10 +49,10 @@ mybot exec "explain this repo" --output-format text
 
 ## Platforms
 
-Linux and macOS on x86_64 and ARM64 are the primary targets. Windows works
-through WSL2 or Git Bash (the `bash` tool requires `bash`), and Android Termux
-is experimental. See [docs/install.md](docs/install.md) for the full matrix and
-cross-compilation instructions.
+Linux, macOS, and Windows (x86_64) are supported: Linux and macOS on x86_64 and
+ARM64, and Windows x86_64 natively (or through WSL2 / Git Bash), while Android
+Termux is experimental. See [docs/install.md](docs/install.md) for the full
+matrix and cross-compilation instructions.
 
 ## Install
 
@@ -283,6 +285,8 @@ Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
 | `Up` / `Down` | history when empty, cursor movement otherwise |
 | `PgUp` / `PgDn` | scroll the transcript |
 | `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
+| `Ctrl+O` | expand or collapse tool outputs in the transcript |
+| `Ctrl+V` / `/image` | attach a clipboard screenshot or image file |
 | `@` | mention a workspace file, plugin, or skill |
 | `/` | open the command palette |
 
@@ -291,10 +295,10 @@ completes the highlighted command, `Enter` runs it, and `Esc` closes it.
 Typing `@` opens an autocomplete popup for workspace files, plugins, and skills.
 
 Slash commands: `/help`, `/changelog`, `/new`, `/model`, `/effort`,
-`/permissions`, `/tools`, `/context`, `/sessions`, `/resume`, `/status`,
-`/version`, `/compact`, `/retry`, `/stop`, `/export`, `/config`, `/doctor`,
-`/keys`, `/init`, `/skills`, `/skill`, `/agents`, `/memory`, `/remember`,
-`/mcp`, `/team`, `/quit`.
+`/permissions`, `/sandbox`, `/image`, `/tools`, `/context`, `/sessions`,
+`/resume`, `/status`, `/version`, `/compact`, `/retry`, `/undo`, `/stop`,
+`/export`, `/config`, `/doctor`, `/keys`, `/init`, `/skills`, `/skill`,
+`/agents`, `/memory`, `/remember`, `/mcp`, `/team`, `/quit`.
 
 ### Compacting a session
 

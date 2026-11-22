@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::super::{App, Ctx, Entry, ModelPicker, UiEvent};
-use crate::config::{Config, EffortLevel, PermissionMode};
+use crate::config::{Config, EffortLevel, PermissionMode, SandboxMode};
 use crate::memory::{MemoryKind, MemoryStore};
 
 impl App {
@@ -89,7 +89,7 @@ impl App {
             let mut text = format!("permission mode: {}\n", ctx.permissions.mode().label());
             text.push_str(
                 "  ask   confirm writes and commands\n\
-                 auto  allow safe reads, ask for the rest\n\
+                 auto  in-project edits and safe commands run; the rest asks\n\
                  full  never prompt\n",
             );
             text.push_str(&format!(
@@ -114,6 +114,46 @@ impl App {
             Ok(()) => self.info(format!("permission mode: {} (saved)", mode.label())),
             Err(error) => self.info(format!(
                 "permission mode: {} (not saved: {error})",
+                mode.label()
+            )),
+        }
+    }
+
+    pub(super) fn sandbox_command(&mut self, args: &str, ctx: &Ctx) {
+        let backend = crate::tools::sandbox::detected_backend();
+        if args.is_empty() {
+            let mut text = format!(
+                "sandbox mode: {} (detected backend: {})\n",
+                ctx.permissions.sandbox().label(),
+                backend.label()
+            );
+            text.push_str(
+                "  off     run shell commands directly\n\
+                 auto    use bwrap/sandbox-exec when available\n\
+                 strict  require OS sandbox (fail if unavailable)\n\
+                 change with /sandbox off|auto|strict",
+            );
+            self.transcript.push(Entry::Info(text));
+            return;
+        }
+
+        let Some(mode) = SandboxMode::parse(args) else {
+            self.info("usage: /sandbox [off|auto|strict]");
+            return;
+        };
+        ctx.permissions.set_sandbox(mode);
+        let saved = Config::load().and_then(|mut config| {
+            config.permissions.sandbox = mode;
+            config.save()
+        });
+        match saved {
+            Ok(()) => self.info(format!(
+                "sandbox: {} ({}, saved)",
+                mode.label(),
+                backend.label()
+            )),
+            Err(error) => self.info(format!(
+                "sandbox: {} (not saved: {error})",
                 mode.label()
             )),
         }

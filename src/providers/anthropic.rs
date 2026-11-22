@@ -129,8 +129,28 @@ pub fn messages_to_wire(messages: &[Message]) -> Vec<Value> {
     let mut out = Vec::new();
     for message in messages {
         match message {
-            Message::User { content } => {
-                out.push(json!({"role": "user", "content": content}));
+            Message::User { content, images } => {
+                if images.is_empty() {
+                    out.push(json!({"role": "user", "content": content}));
+                } else {
+                    let mut blocks: Vec<Value> = images
+                        .iter()
+                        .map(|img| {
+                            json!({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": img.media_type,
+                                    "data": img.data_base64,
+                                }
+                            })
+                        })
+                        .collect();
+                    if !content.is_empty() {
+                        blocks.push(json!({"type": "text", "text": content}));
+                    }
+                    out.push(json!({"role": "user", "content": blocks}));
+                }
             }
             Message::Assistant { content } => {
                 let mut blocks: Vec<Value> = Vec::new();

@@ -55,6 +55,9 @@ impl Tool for WriteTool {
                     ));
                 }
 
+        ctx.checkpoints
+            .record_before_write(&path, display_path(&ctx.cwd, &path));
+
         if let Err(error) = tokio::fs::write(&path, content).await {
             return ToolOutput::error(format!("cannot write {}: {error}", path.display()));
         }
@@ -71,16 +74,9 @@ impl Tool for WriteTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use tokio::sync::Mutex;
-    use tokio_util::sync::CancellationToken;
 
     fn ctx(dir: &std::path::Path) -> ToolCtx {
-        ToolCtx {
-            cwd: dir.to_path_buf(),
-            cancel: CancellationToken::new(),
-            todos: Arc::new(Mutex::new(Vec::new())),
-        }
+        ToolCtx::for_test(dir.to_path_buf())
     }
 
     #[tokio::test]

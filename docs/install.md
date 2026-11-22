@@ -95,18 +95,18 @@ brew install cmake
 | --- | --- | --- | --- |
 | Linux | x86_64 | Tested | Primary development platform |
 | Linux | aarch64 | Tested via Docker/QEMU | Raspberry Pi OS 64-bit, ARM servers |
-| macOS | x86_64, arm64 | Expected to work | Build from source; no macOS hardware in this repo's test environment |
-| Windows 10/11 | x86_64 | Best effort | Use WSL2 (recommended) or Git Bash; `bash` must be on PATH |
+| macOS | x86_64, arm64 | Release builds | CI-built binaries for Intel and Apple Silicon |
+| Windows 10/11 | x86_64 | Release builds | Native binary (`x86_64-pc-windows-msvc`); Git Bash or PowerShell for shell tool |
 | Android Termux | aarch64 | Experimental | Untested; needs bash and a full Rust toolchain |
 | wasm, iOS | — | Not supported | Requires process spawning and a terminal |
 
-Windows caveats:
+Windows notes:
 
-- The `bash` tool invokes `bash -lc`, so WSL2 or Git Bash is required.
-- Process-group termination is a no-op outside Unix (`src/tools/bash.rs`), so a
-  timed-out command may leave child processes running.
-- Native Windows builds are not part of the tested matrix; WSL2 is the
-  recommended path.
+- If Git Bash (`bash.exe`) is available it is preferred; otherwise the shell
+  tool falls back to PowerShell.
+- Timed-out or cancelled commands terminate the process tree with `taskkill /T /F`.
+- OS-level sandboxing (`bwrap` / `sandbox-exec`) is Unix-only; Windows runs
+  commands directly unless executed inside WSL2.
 
 ## Headless-only build
 

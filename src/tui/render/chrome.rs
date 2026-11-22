@@ -18,7 +18,7 @@ pub(super) fn draw_composer_hint(frame: &mut Frame, area: Rect) {
             Style::default().fg(theme::USER).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            " · @ file or plugin · / autocomplete · Shift+Enter newline",
+            " · @ file or plugin · / autocomplete · Ctrl+V image · Ctrl+O expand",
             Style::default().fg(theme::DIM),
         ),
     ]);
@@ -32,13 +32,17 @@ pub(super) fn draw_composer(frame: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(theme::ACCENT)
     };
     let title = if app.palette.is_some() {
-        " command "
+        " command ".to_string()
     } else if app.mention.is_some() {
-        " mention "
+        " mention ".to_string()
     } else if app.busy {
-        " working… "
+        " working… ".to_string()
+    } else if app.pending_images.len() == 1 {
+        " message · 1 image ".to_string()
+    } else if !app.pending_images.is_empty() {
+        format!(" message · {} images ", app.pending_images.len())
     } else {
-        " message "
+        " message ".to_string()
     };
     let block = Block::default()
         .borders(Borders::ALL)

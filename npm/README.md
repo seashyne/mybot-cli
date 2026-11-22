@@ -29,8 +29,7 @@ Switch models later with `/model` inside the TUI.
 | Linux | arm64 | `aarch64-unknown-linux-gnu` |
 | macOS | x86_64 | `x86_64-apple-darwin` |
 | macOS | arm64 | `aarch64-apple-darwin` |
-
-Windows is not supported directly — use WSL2.
+| Windows | x86_64 | `x86_64-pc-windows-msvc` |
 
 ## Pin a version
 

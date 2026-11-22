@@ -99,6 +99,8 @@ fn ctx(cwd: &std::path::Path) -> ToolCtx {
         cwd: cwd.to_path_buf(),
         cancel: CancellationToken::new(),
         todos: Arc::new(Mutex::new(Vec::new())),
+        checkpoints: crate::tools::checkpoint::CheckpointStore::new(),
+        sandbox: crate::config::SandboxMode::Auto,
     }
 }
 

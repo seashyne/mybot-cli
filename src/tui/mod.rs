@@ -134,8 +134,9 @@ pub async fn run(options: TuiOptions) -> Result<()> {
 
     let (perm_tx, mut perm_rx) = mpsc::unbounded_channel::<PermissionAsk>();
     let prompter = Arc::new(ChannelPrompter { tx: perm_tx });
-    let permissions = Arc::new(PermissionEngine::new(
+    let permissions = Arc::new(PermissionEngine::with_sandbox(
         permission,
+        config.permissions.sandbox,
         cwd.clone(),
         config.permissions.rules.clone(),
     ));
@@ -163,7 +164,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     crate::team::register_lead(&mut registry, team.clone());
     let tools = Arc::new(registry);
 
-    let agent = Arc::new(Mutex::new(Agent::new(AgentOptions {
+    let agent_value = Agent::new(AgentOptions {
         provider,
         tools: tools.clone(),
         permissions: permissions.clone(),
@@ -177,7 +178,9 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         session: Some(session),
         messages,
         retry,
-    })));
+    });
+    let checkpoints = agent_value.checkpoints();
+    let agent = Arc::new(Mutex::new(agent_value));
 
     let status = Status {
         provider: resolved.name.clone(),
@@ -187,6 +190,8 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         session: session_id,
         input_tokens: 0,
         output_tokens: 0,
+        total_input_tokens: 0,
+        total_output_tokens: 0,
     };
 
     let mut app = App::new(status, cwd, options.initial_prompt);
@@ -204,6 +209,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         agents,
         permissions: permissions.clone(),
         tools,
+        checkpoints,
     };
 
     app.start_initial(&ctx);

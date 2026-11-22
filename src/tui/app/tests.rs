@@ -12,6 +12,8 @@ fn app() -> App {
             session: "abc12345".into(),
             input_tokens: 0,
             output_tokens: 0,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
         },
         PathBuf::from("/tmp"),
         None,
@@ -190,4 +192,45 @@ fn compact_empty_and_cancelled_clear_busy() {
     app.handle_agent(AgentEvent::CompactEnd(CompactOutcome::Cancelled));
     assert!(!app.busy);
     assert!(app.info.as_ref().unwrap().0.contains("cancelled"));
+}
+
+#[test]
+fn ctrl_o_toggles_tool_expansion_and_usage_accumulates() {
+    let mut app = app();
+    app.handle_agent(AgentEvent::TurnStart { step: 1 });
+    app.handle_agent(AgentEvent::Usage {
+        input: 1000,
+        output: 1,
+    });
+    app.handle_agent(AgentEvent::Usage {
+        input: 0,
+        output: 40,
+    });
+    assert_eq!(app.status.input_tokens, 1000);
+    assert_eq!(app.status.total_input_tokens, 1000);
+    assert_eq!(app.status.output_tokens, 40);
+    assert_eq!(app.status.total_output_tokens, 40);
+
+    app.transcript.push(Entry::Tool {
+        id: "1".into(),
+        name: "bash".into(),
+        summary: "ls".into(),
+        content: "Cargo.toml\nsrc".into(),
+        is_error: false,
+        running: false,
+        expanded: false,
+    });
+    app.toggle_tool_expansion();
+    assert!(matches!(
+        app.transcript.last(),
+        Some(Entry::Tool { expanded: true, .. })
+    ));
+    app.toggle_tool_expansion();
+    assert!(matches!(
+        app.transcript.last(),
+        Some(Entry::Tool {
+            expanded: false,
+            ..
+        })
+    ));
 }

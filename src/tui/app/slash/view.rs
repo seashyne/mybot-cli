@@ -16,16 +16,22 @@ impl App {
 
     pub(super) fn status_command(&mut self, ctx: &Ctx) {
         let effort = crate::config::EffortLevel::from_budget(self.status.thinking_budget);
+        let backend = crate::tools::sandbox::detected_backend();
         self.transcript.push(Entry::Info(format!(
-            "version: {}\nprovider: {}\nmodel: {}\neffort: {}\npermission: {}\nsession: {}\ntokens: ↑{} ↓{}\ntools: {} · skills: {} · agents: {} · mcp: {}",
+            "version: {}\nprovider: {}\nmodel: {}\neffort: {}\npermission: {}\nsandbox: {} ({})\nsession: {}\ncontext tokens: ↑{} ↓{}\nsession total: ↑{} ↓{}\nundo checkpoints: {}\ntools: {} · skills: {} · agents: {} · mcp: {}",
             crate::version::SHORT,
             self.status.provider,
             self.status.model,
             effort.label(),
             ctx.permissions.mode().label(),
+            ctx.permissions.sandbox().label(),
+            backend.label(),
             self.status.session,
             self.status.input_tokens,
             self.status.output_tokens,
+            self.status.total_input_tokens,
+            self.status.total_output_tokens,
+            ctx.checkpoints.undo_count(),
             ctx.tools.names().len(),
             ctx.skills.len(),
             ctx.agents.agents.len(),
@@ -220,9 +226,11 @@ impl App {
             }
         }
         lines.push(format!(
-            "session: {} · permission: {}",
+            "session: {} · permission: {} · sandbox: {} ({})",
             self.status.session,
-            ctx.permissions.mode().label()
+            ctx.permissions.mode().label(),
+            ctx.permissions.sandbox().label(),
+            crate::tools::sandbox::detected_backend().label()
         ));
         self.transcript.push(Entry::Info(lines.join("\n")));
     }
@@ -237,6 +245,8 @@ impl App {
              Ctrl+C             cancel the turn, or exit when idle\n\
              Ctrl+D             exit when the composer is empty\n\
              PgUp/PgDn          scroll the transcript\n\
+             Ctrl+O             expand or collapse tool outputs\n\
+             Ctrl+V / /image    attach clipboard screenshot or image file\n\
              @                  mention a file, plugin, or skill\n\
              /                  open the command palette\n\
              /model             searchable model picker\n\

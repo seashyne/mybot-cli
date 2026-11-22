@@ -2,7 +2,7 @@ use serde_json::json;
 
 use super::stream::{map_stop_reason, normalize_event};
 use super::{build_body, messages_to_wire};
-use crate::protocol::{Message, StopReason};
+use crate::protocol::{ImageAttachment, Message, StopReason};
 use crate::providers::sse::SseEvent;
 use crate::providers::{CompletionRequest, ProviderEvent, ToolSpec};
 
@@ -38,6 +38,24 @@ fn thinking_disables_temperature() {
     let body = build_body(&request);
     assert!(body.get("temperature").is_none());
     assert_eq!(body["thinking"]["budget_tokens"], 2048);
+}
+
+#[test]
+fn user_images_become_anthropic_base64_blocks() {
+    let msgs = vec![Message::user_with_images(
+        "look at this",
+        vec![ImageAttachment {
+            name: "shot.png".into(),
+            media_type: "image/png".into(),
+            data_base64: "AQID".into(),
+        }],
+    )];
+    let wire = messages_to_wire(&msgs);
+    assert_eq!(wire[0]["content"][0]["type"], "image");
+    assert_eq!(wire[0]["content"][0]["source"]["media_type"], "image/png");
+    assert_eq!(wire[0]["content"][0]["source"]["data"], "AQID");
+    assert_eq!(wire[0]["content"][1]["type"], "text");
+    assert_eq!(wire[0]["content"][1]["text"], "look at this");
 }
 
 #[test]

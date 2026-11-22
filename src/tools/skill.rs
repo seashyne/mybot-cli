@@ -96,6 +96,8 @@ mod tests {
             cwd: std::env::temp_dir(),
             cancel: CancellationToken::new(),
             todos: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            checkpoints: crate::tools::checkpoint::CheckpointStore::new(),
+            sandbox: crate::config::SandboxMode::Auto,
         }
     }
 
