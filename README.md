@@ -14,7 +14,7 @@ mybot exec "explain this repo" --output-format text
 - **Two wire protocols**: Anthropic Messages API and OpenAI-compatible Chat
   Completions, both streaming SSE. Works with Anthropic, OpenAI, MiniMax,
   DeepSeek, OpenRouter, Ollama, and any compatible endpoint.
-- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`.
+- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`, `skill`.
   Reads are capped and line-numbered, edits are atomic and reject ambiguous
   matches, bash has timeouts and process-group kills.
 - **Permissions**: `ask`, `auto`, and `full` modes with persisted allow/deny
@@ -26,10 +26,14 @@ mybot exec "explain this repo" --output-format text
   compaction in the session ledger so resumed sessions stay small.
 - **Project context**: loads `CLAUDE.md` or `AGENTS.md` from the workspace root
   plus `~/.mybot/AGENTS.md`, capped at 32 KB.
+- **Skills and plugins**: markdown instruction packs loaded on demand, plus
+  plugins that bundle skills and slash commands.
+- **First-run setup**: a guided screen picks a provider, stores the key, and
+  chooses a model; `/model` switches at runtime.
 - **Headless mode**: `text`, `json`, and `stream-json` output with stable exit
   codes for scripts and CI.
 
-Not implemented yet: MCP servers, plugins, sub-agents, syntax highlighting.
+Not implemented yet: MCP servers, sub-agents, syntax highlighting.
 
 ## Platforms
 
@@ -64,14 +68,28 @@ cargo build --release --no-default-features
 
 ## Quick start
 
-Set an API key and run:
+Run `mybot` with no configuration and a setup screen walks you through picking a
+provider, pasting a key and choosing a model:
+
+```bash
+mybot
+```
+
+Presets are included for Anthropic, OpenAI, Google Gemini, DeepSeek, OpenRouter,
+Groq, Mistral, xAI, Moonshot, Qwen, Z.ai, MiniMax, LM Studio, Ollama and any
+custom OpenAI-compatible endpoint.
+
+Or set a key through the environment:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 mybot
 ```
 
-OpenAI-compatible providers can be added without editing files:
+Switch models at any time from inside the TUI with `/model` — the picker writes
+the choice back to `config.toml` and keeps the conversation.
+
+OpenAI-compatible providers can also be added without editing files:
 
 ```bash
 mybot provider add local \
@@ -218,6 +236,50 @@ the output limit it is still used, and the boundary line marks it as truncated.
 Very long conversations are flattened into a bounded transcript before
 summarization, keeping the first request and the most recent turns.
 
+## Skills and plugins
+
+A **skill** is a markdown instruction pack the model can load on demand:
+
+```
+~/.mybot/skills/<name>/SKILL.md          # available in every project
+<project>/.mybot/skills/<name>/SKILL.md  # project-only, wins on a name clash
+```
+
+```markdown
+---
+name: rust-review
+description: Review Rust code for correctness and idioms
+---
+# Rust review
+1. Read `git diff`
+2. Check error handling and ownership
+3. Report findings as `path:line`
+```
+
+The model sees every skill name and description in its system prompt and calls
+the `skill` tool to load the body. From the TUI, `/skills` lists them and
+`/skill rust-review` loads one immediately.
+
+A **plugin** bundles skills and slash commands so they can be shared:
+
+```
+<plugin>/
+  plugin.toml          name, version, description
+  skills/<name>/SKILL.md
+  commands/<name>.md   becomes /<name>, $ARGUMENTS is substituted
+```
+
+```bash
+mybot skill list
+mybot skill new my-skill --scope user
+mybot plugin list
+mybot plugin add ./examples/plugins/code-review --project
+mybot plugin command review "focus on src/"
+```
+
+The bundled example in `examples/plugins/code-review/` adds a `/review`
+command and a `security-review` skill.
+
 ## Permissions
 
 | Mode | Behaviour |
@@ -264,6 +326,8 @@ pipeline (request shape, streaming parse, tool loop, session replay, retries,
 exit codes) is covered offline.
 
 ## Documentation
+
+Read the rendered site at **https://seashyne.github.io/mybot-cli/** or browse the source:
 
 - [Installation and platform support](docs/install.md)
 - [คู่มือผู้ใช้ภาษาไทย](docs/manual.th.md)

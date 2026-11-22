@@ -148,7 +148,55 @@ docker run --rm --platform linux/arm64 \
 
 ## 4. เริ่มต้นใช้งาน
 
-### 4.1 ตั้ง API key
+### 4.1 setup ครั้งแรก (หน้าจอแนะนำ)
+
+รัน `mybot` ครั้งแรกเมื่อยังไม่มี provider ที่ใช้ได้ — จะขึ้นหน้าจอ setup ให้เลือกทีละขั้น
+
+```
+╭ mybot setup ─────────────────────────────────────────╮
+│ step 1 of 3                                          │
+│ Choose a provider                                    │
+│ ▸ Anthropic · Claude          api.anthropic.com      │
+│   OpenAI · GPT                api.openai.com         │
+│   Google Gemini               generativelanguage...  │
+│   DeepSeek                    api.deepseek.com       │
+│   OpenRouter                  one key, many models   │
+│   ...                                                │
+│ ↑↓ move · Enter select · Esc quit                    │
+╰──────────────────────────────────────────────────────╯
+```
+
+1. เลือก provider (↑↓ แล้ว Enter)
+2. วาง API key (ถ้าเป็น cloud) — บันทึกลง `config.toml` ให้อัตโนมัติ
+3. ใส่ชื่อ model (มีค่าเริ่มต้นให้ แก้ได้)
+
+Esc ย้อนกลับทีละขั้น หรือกด Esc ที่ขั้นแรกเพื่อออก
+
+### 4.2 provider ที่มี preset ให้เลือก
+
+| Provider | Base URL | Model เริ่มต้น |
+| --- | --- | --- |
+| Anthropic · Claude | api.anthropic.com | claude-sonnet-4-5 |
+| OpenAI · GPT | api.openai.com | gpt-4o-mini |
+| Google Gemini | generativelanguage.googleapis.com | gemini-2.5-flash |
+| DeepSeek | api.deepseek.com | deepseek-chat |
+| OpenRouter | openrouter.ai | openrouter/auto |
+| Groq | api.groq.com | llama-3.3-70b-versatile |
+| Mistral | api.mistral.ai | mistral-large-latest |
+| xAI · Grok | api.x.ai | grok-2-latest |
+| Moonshot · Kimi | api.moonshot.cn | moonshot-v1-8k |
+| Alibaba · Qwen | dashscope | qwen-max |
+| Z.ai · GLM | api.z.ai | glm-4.6 |
+| MiniMax | api.minimax.io | MiniMax-M2 |
+| LM Studio | 127.0.0.1:1234 | auto |
+| Ollama | 127.0.0.1:11434 | auto |
+| Custom | ระบุเอง | ระบุเอง |
+
+ชื่อ model เป็นเพียงค่าเริ่มต้น — พิมพ์ชื่ออื่นทับได้เสมอถ้า account เข้าถึงได้
+
+### 4.3 ตั้ง API key ผ่าน environment
+
+ถ้าไม่อยากเก็บ key ในไฟล์ ใช้ env แทนได้:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -162,7 +210,7 @@ export OPENAI_API_KEY=sk-...
 mybot -m openai/gpt-4o-mini
 ```
 
-### 4.2 เปิด TUI
+### 4.4 เปิด TUI
 
 ```bash
 mybot                  # เปิดหน้าจอสนทนา
@@ -170,7 +218,26 @@ mybot "explain this repo"   # เปิดพร้อม prompt แรก
 mybot -c               # ต่อ session ล่าสุดในโฟลเดอร์นี้
 ```
 
-### 4.3 ใช้แบบ headless
+### 4.5 เปลี่ยน model ระหว่างใช้งาน
+
+พิมพ์ `/model` ใน TUI — จะเปิดรายการ provider/model ทั้งหมด
+
+```
+╭ switch model ────────────────────────────────────────╮
+│ ▸ anthropic   claude-sonnet-4-5         needs key     │
+│   lmstudio    qwen2.5-0.5b-instruct     current       │
+│   openai      gpt-4o-mini               needs key     │
+│   custom      type any model name…                    │
+│ ↑↓ move · Enter apply · Esc close                     │
+╰───────────────────────────────────────────────────────╯
+```
+
+- เลือกแล้ว Enter → สลับทันทีโดยไม่ต้องออกจากโปรแกรม
+- เลือกบรรทัด `custom` เพื่อพิมพ์ชื่อ model อะไรก็ได้
+- การเปลี่ยนจะถูกบันทึกเป็น `default_provider` ใน `config.toml`
+- บทสนทนายังอยู่ครบ สลับ model กลางบทสนทนาได้
+
+### 4.6 ใช้แบบ headless
 
 ```bash
 mybot exec "explain this repo" --output-format text
@@ -178,9 +245,9 @@ mybot exec - < prompt.txt
 mybot exec "refactor this" --output-format json
 ```
 
-### 4.4 ใช้โมเดล local (LM Studio / Ollama)
+### 4.7 ใช้โมเดล local (LM Studio / Ollama)
 
-เพิ่ม provider ครั้งเดียว:
+เลือกจากหน้าจอ setup ได้เลย หรือเพิ่มผ่านคำสั่ง:
 
 ```bash
 # LM Studio (port ปกติ 1234)
@@ -342,7 +409,114 @@ mybot provider remove local
 
 ---
 
-## 9. Permissions
+## 9. Skills และ Plugins
+
+### 9.1 Skill คืออะไร
+
+Skill คือชุดคำสั่ง (markdown) ที่โมเดลโหลดมาใช้เมื่อต้องทำงานเฉพาะทาง
+เช่น รีวิวโค้ด, เขียน migration, ตรวจ security — ไม่ต้องพิมพ์ instruction ซ้ำทุกครั้ง
+
+โครงสร้าง:
+
+```
+~/.mybot/skills/<name>/SKILL.md          # ใช้ได้ทุกโปรเจกต์
+<project>/.mybot/skills/<name>/SKILL.md  # เฉพาะโปรเจกต์นี้ (ชนะถ้าชื่อซ้ำ)
+```
+
+ตัวอย่าง `SKILL.md`:
+
+```markdown
+---
+name: rust-review
+description: Review Rust code for correctness and idioms
+---
+# Rust review
+
+1. อ่าน `git diff`
+2. ตรวจ error handling และ ownership
+3. รายงานเป็น `path:line` พร้อมข้อเสนอ
+```
+
+- `name` ต้องเป็นตัวพิมพ์เล็ก ตัวเลข `-` หรือ `_`
+- `description` คือสิ่งที่โมเดลเห็นใน system prompt ใช้บอกว่าเมื่อไรควรโหลด
+- เนื้อหาหลัง `---` คือคำสั่งเต็มที่โมเดลจะได้รับ
+
+### 9.2 ใช้ skill
+
+โมเดลจะเห็นรายการ skill ทั้งหมดและเรียก tool `skill` เองเมื่อจำเป็น
+หรือสั่งตรงๆ จาก TUI:
+
+```
+/skills            # ดูรายการทั้งหมด
+/skill rust-review # โหลด skill แล้วเริ่มงานทันที
+```
+
+จาก command line:
+
+```bash
+mybot skill list
+mybot skill show rust-review
+mybot skill new my-skill            # สร้างโครงในโปรเจกต์
+mybot skill new my-skill --scope user  # สร้างใน ~/.mybot/skills
+```
+
+### 9.3 Plugin
+
+Plugin คือโฟลเดอร์ที่รวม skill และ slash command ไว้ด้วยกัน แจกจ่ายได้
+
+```
+~/.mybot/plugins/<plugin>/          # user-wide
+<project>/.mybot/plugins/<plugin>/  # project (ชนะถ้าชื่อซ้ำ)
+  plugin.toml
+  skills/<name>/SKILL.md
+  commands/<name>.md
+```
+
+`plugin.toml`:
+
+```toml
+name = "code-review"
+version = "0.1.0"
+description = "Review changes for correctness and security"
+```
+
+`commands/<name>.md` กลายเป็น slash command ใน TUI — เนื้อหาไฟล์คือ prompt
+และ `$ARGUMENTS` จะถูกแทนด้วยข้อความที่พิมพ์ตามหลัง:
+
+```markdown
+---
+description: Review the current diff
+---
+Review the current changes and report issues with `path:line`.
+
+$ARGUMENTS
+```
+
+### 9.4 จัดการ plugin
+
+```bash
+mybot plugin list
+mybot plugin add ./path/to/plugin            # ติดตั้งลง ~/.mybot/plugins
+mybot plugin add ./path/to/plugin --project  # ติดตั้งลง .mybot/plugins
+mybot plugin remove code-review
+mybot plugin command review "focus on src/"  # ดู prompt ที่จะส่ง
+```
+
+ใน TUI ใช้ `/review` ได้ทันทีหลังติดตั้ง (ดูรายการด้วย `/skills`)
+
+### 9.5 ตัวอย่างที่มากับ repo
+
+`examples/plugins/code-review/` มี plugin ตัวอย่างพร้อม:
+- command `/review`
+- skill `security-review`
+
+ลองได้เลย:
+
+```bash
+mybot plugin add examples/plugins/code-review --project
+```
+
+## 10. Permissions
 
 | โหมด | พฤติกรรม |
 | --- | --- |
@@ -369,7 +543,7 @@ behavior = "allow"    # allow | deny | ask
 
 ---
 
-## 10. Headless mode
+## 11. Headless mode
 
 ```bash
 mybot exec "<prompt>"
@@ -421,7 +595,7 @@ mybot exec "refactor this" --output-format stream-json \
 
 ---
 
-## 11. ประสิทธิภาพ
+## 12. ประสิทธิภาพ
 
 สรุปจาก [performance.md](performance.md) บน Intel i5-13400F:
 
@@ -435,7 +609,7 @@ mybot exec "refactor this" --output-format stream-json \
 
 ---
 
-## 12. แก้ปัญหา
+## 13. แก้ปัญหา
 
 **exit code 3 — missing API key**
 ตั้ง environment variable ตามชื่อที่ error บอก หรือเพิ่ม `api_key` ใน config
@@ -466,6 +640,6 @@ tool มี timeout 120s (สูงสุด 300s) และ `Esc` ยกเล�
 
 ---
 
-## 13. License
+## 14. License
 
 MIT — ดู [LICENSE](../LICENSE)

@@ -46,7 +46,53 @@ cd mybot-cli &amp;&amp; ./install.sh</code></pre>
     <h3>Context compaction</h3>
     <p><code>/compact</code> ย่อประวัติทั้งบทสนทนาเป็นสรุปสั้นๆ แล้วทำงานต่อได้ในหน้าต่างใหม่</p>
   </div>
+  <div class="feature">
+    <h3>Skills</h3>
+    <p>ชุดคำสั่ง markdown ที่โมเดลโหลดเองเมื่อต้องทำงานเฉพาะทาง</p>
+  </div>
+  <div class="feature">
+    <h3>Plugins</h3>
+    <p>รวม skill และ slash command ไว้แจกจ่าย ติดตั้งด้วยคำสั่งเดียว</p>
+  </div>
+  <div class="feature">
+    <h3>Setup ครั้งแรก</h3>
+    <p>หน้าจอเลือก provider → ใส่ key → เลือก model แล้วเริ่มได้เลย</p>
+  </div>
 </div>
+
+## เริ่มใช้งาน
+
+รัน `mybot` ครั้งแรก จะมีหน้าจอ setup ให้เลือก provider → ใส่ key → เลือก model
+แล้วเข้า TUI ทันที ไม่ต้องแก้ไฟล์ config เอง
+
+```bash
+mybot
+```
+
+## Providers
+
+มี preset ให้เลือกในหน้าจอ setup:
+
+<div class="providers">
+  <span>Anthropic · Claude</span>
+  <span>OpenAI · GPT</span>
+  <span>Google Gemini</span>
+  <span>DeepSeek</span>
+  <span>OpenRouter</span>
+  <span>Groq</span>
+  <span>Mistral</span>
+  <span>xAI · Grok</span>
+  <span>Moonshot · Kimi</span>
+  <span>Alibaba · Qwen</span>
+  <span>Z.ai · GLM</span>
+  <span>MiniMax</span>
+  <span>LM Studio</span>
+  <span>Ollama</span>
+  <span>Custom endpoint</span>
+</div>
+
+สลับ model ระหว่างใช้งานได้ด้วย `/model` — เลือกจากรายการหรือพิมพ์ชื่อเอง
+แล้วระบบบันทึกเป็นค่า default ให้
 
 ## ติดตั้งใน 3 ขั้น
 
@@ -71,6 +117,32 @@ mybot "อธิบายโครงสร้างโปรเจกต์น�
 
 รายละเอียดทั้งหมด — ARM64, cross-compile, headless-only, Windows/WSL — อยู่ใน
 [คู่มือติดตั้ง]({{ '/install/' | relative_url }})
+
+## Skills และ Plugins
+
+Skill คือไฟล์ markdown ที่บอกวิธีทำงานเฉพาะทาง โมเดลเห็นรายการทั้งหมดและโหลดเมื่อจำเป็น
+
+```bash
+mybot skill list
+mybot skill new code-review --scope user
+mybot skill show code-review
+```
+
+Plugin รวม skill และ slash command ไว้ด้วยกัน:
+
+```
+<plugin>/
+  plugin.toml
+  skills/<name>/SKILL.md
+  commands/<name>.md     # กลายเป็น /<name> ใน TUI
+```
+
+```bash
+mybot plugin add examples/plugins/code-review --project
+mybot plugin list
+```
+
+ใน TUI: `/skills` ดูรายการ · `/skill <name>` เรียกใช้ · `/<command>` จาก plugin
 
 ## เอกสาร
 

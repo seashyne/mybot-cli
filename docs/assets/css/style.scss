@@ -100,6 +100,22 @@
   color: #555;
 }
 
+.providers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  margin: .4rem 0 1.6rem;
+}
+
+.providers span {
+  border: 1px solid #e2e2e8;
+  background: #fafafe;
+  border-radius: 999px;
+  padding: .28rem .75rem;
+  font-size: .85rem;
+  color: #444;
+}
+
 /* tables sit directly in .wrapper on the default layout */
 .wrapper table {
   display: table;
