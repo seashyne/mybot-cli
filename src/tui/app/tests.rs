@@ -17,6 +17,10 @@ fn app() -> App {
     )
 }
 
+pub(crate) fn test_app() -> App {
+    app()
+}
+
 #[test]
 fn streaming_becomes_assistant_entry() {
     let mut app = app();

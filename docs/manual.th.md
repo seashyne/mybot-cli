@@ -295,20 +295,26 @@ mybot update --check   # เช็กว่ามี release ใหม่ไห�
 
 ### 4.5 เปลี่ยน model ระหว่างใช้งาน
 
-พิมพ์ `/model` ใน TUI — จะเปิดรายการ provider/model ทั้งหมด
+พิมพ์ `/model` ใน TUI — จะเปิดรายการ provider/model ทั้งหมด แล้วถาม API ของแต่ละ
+provider เพื่อเติม model ที่มีจริงในบัญชีให้อัตโนมัติ
 
 ```
-╭ switch model ────────────────────────────────────────╮
-│ ▸ anthropic   claude-sonnet-4-5         needs key     │
-│   lmstudio    qwen2.5-0.5b-instruct     current       │
-│   openai      gpt-4o-mini               needs key     │
-│   custom      type any model name…                    │
-│ ↑↓ move · Enter apply · Esc close                     │
-╰───────────────────────────────────────────────────────╯
+╭ switch model ───────────────────────────────────────╮
+│ search type to filter…        (18 models · loading…) │
+│                                                      │
+│ ▸ anthropic   claude-sonnet-4-5        current       │
+│   anthropic   claude-opus-4-1                        │
+│   lmstudio    qwen2.5-0.5b-instruct    needs key     │
+│   openai      gpt-4o-mini              needs key     │
+│ ↑↓ move · Enter apply · Esc close · type to filter   │
+╰──────────────────────────────────────────────────────╯
 ```
 
+- พิมพ์เพื่อกรองได้ทันที เช่น `sonnet`, `deepseek/`, `gpt`
+- รายการที่ API ตอบกลับมาจะถูกเติมไว้บนสุด และเก็บ model ที่ตั้งไว้ใน config ไว้ด้วย
+- ถ้าพิมพ์ชื่อ model ที่ไม่มีในรายการแล้วกด Enter จะใช้ค่านั้นเป็น model id ตรง ๆ
+- provider ที่ยังไม่ได้ใส่ key จะขึ้น `needs key` แต่ยังเลือกได้ (จะ error ตอนส่งจริง)
 - เลือกแล้ว Enter → สลับทันทีโดยไม่ต้องออกจากโปรแกรม
-- เลือกบรรทัด `custom` เพื่อพิมพ์ชื่อ model อะไรก็ได้
 - การเปลี่ยนจะถูกบันทึกเป็น `default_provider` ใน `config.toml`
 - บทสนทนายังอยู่ครบ สลับ model กลางบทสนทนาได้
 
@@ -421,6 +427,17 @@ mybot provider remove local
 | `Up` / `Down` | เรียก history เมื่อช่องว่าง หรือเลื่อน cursor |
 | `PgUp` / `PgDn` | เลื่อน transcript |
 | `a` / `A` / `d` | อนุญาตครั้งเดียว / อนุญาตตลอด / ปฏิเสธ (ตอนถาม permission) |
+| `/` | เปิด command palette (พิมพ์ต่อเพื่อกรอง) |
+
+### Command palette
+
+พิมพ์ `/` ในช่องพิมพ์ จะมีรายการคำสั่งขึ้นมาเหนือช่องพิมพ์ พร้อมคำอธิบาย
+
+- พิมพ์ต่อเพื่อกรอง — จับทั้งชื่อ, alias และคำอธิบาย
+- `↑` / `↓` เลื่อน, `Tab` เติมชื่อคำสั่ง, `Enter` รัน, `Esc` ปิด
+- คำสั่งที่แก้ session (`/new`, `/resume`, `/compact`, `/retry`) จะบอกว่า
+  "waits for the turn" ถ้ามี turn กำลังทำงานอยู่
+- รายการเดียวกับ `/help` เพราะอ่านจาก catalog เดียวกัน
 
 ### Slash commands
 
@@ -428,11 +445,21 @@ mybot provider remove local
 | --- | --- |
 | `/help` | แสดงคำสั่งและปุ่มลัด |
 | `/new` หรือ `/clear` | เริ่ม session ใหม่ |
-| `/model` | แสดง provider/model ปัจจุบัน |
+| `/model [provider/model]` | เปิด picker เลือก model (กรองได้, ดึงรายการจริงจาก API) |
+| `/permissions [ask\|auto\|full]` | ดูหรือเปลี่ยน permission mode (บันทึกทันที) |
+| `/tools` | แสดง tools ที่โมเดลเรียกได้ พร้อมโหมดการทำงาน |
+| `/context` | แสดงขนาด system prompt, บทสนทนา, tokens |
 | `/sessions` | แสดง session ล่าสุด 10 รายการ |
+| `/resume <id>` | โหลด session เก่าเข้ามาในหน้าต่างนี้ (ใส่แค่ prefix ก็ได้) |
 | `/status` | แสดง provider, model, permission, session, tokens |
 | `/version` | แสดงเวอร์ชัน, commit, target และ path ของ binary |
 | `/compact` | สรุปบทสนทนาและแทน history ด้วย summary |
+| `/retry` | ส่ง prompt ล่าสุดซ้ำ |
+| `/stop` หรือ `/cancel` | ยกเลิก turn ที่กำลังทำงาน |
+| `/export [path]` | เขียน transcript เป็นไฟล์ markdown |
+| `/config` | แสดง path ของ config, providers และ rules |
+| `/doctor` | ตรวจ config และ integrations |
+| `/keys` หรือ `/hotkeys` | แสดงปุ่มลัด |
 | `/skills` | แสดง skills และ plugin commands |
 | `/skill <name>` | โหลด skill แล้วเริ่ม turn ทันที |
 | `/agents` | แสดง sub-agent definitions |

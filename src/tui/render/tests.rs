@@ -139,13 +139,38 @@ fn error_entry_is_marked() {
 }
 
 #[test]
+fn draws_the_command_palette() {
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    let mut app = app();
+    app.composer.insert_str("/");
+    app.sync_palette();
+
+    let backend = TestBackend::new(90, 30);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(text.contains("commands"));
+    assert!(text.contains("/model"));
+    assert!(text.contains("/permissions"));
+}
+
+#[test]
 fn draws_the_model_picker_overlay() {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
     let mut app = app();
     app.model_picker = Some(ModelPicker {
-        items: vec![
+        all: vec![
             ModelItem {
                 provider: "anthropic".into(),
                 model: "claude-sonnet-4-5".into(),
@@ -157,9 +182,12 @@ fn draws_the_model_picker_overlay() {
                 ready: false,
             },
         ],
+        query: String::new(),
         selected: 1,
-        custom: None,
         error: None,
+        loading: false,
+        pending: 0,
+        notes: Vec::new(),
     });
 
     let backend = TestBackend::new(90, 30);
@@ -176,5 +204,5 @@ fn draws_the_model_picker_overlay() {
     assert!(text.contains("switch model"));
     assert!(text.contains("claude-sonnet-4-5"));
     assert!(text.contains("needs key"));
-    assert!(text.contains("custom"));
+    assert!(text.contains("type to filter"));
 }

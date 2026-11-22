@@ -93,7 +93,7 @@ impl Agent {
                     format!(
                         "permission denied for {} (mode: {})",
                         invocation.name,
-                        self.permissions.mode.label()
+                        self.permissions.mode().label()
                     ),
                 );
                 let _ = tx

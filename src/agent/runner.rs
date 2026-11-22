@@ -88,6 +88,10 @@ impl Agent {
         &self.messages
     }
 
+    pub fn system(&self) -> &[String] {
+        &self.system
+    }
+
     pub fn provider_name(&self) -> &str {
         self.provider.name()
     }
@@ -283,7 +287,16 @@ impl Agent {
 
     /// Clear the conversation and optionally switch to a new session ledger.
     pub async fn reset(&mut self, session: Option<Arc<Mutex<Session>>>) {
-        self.messages.clear();
+        self.reset_with(session, Vec::new()).await;
+    }
+
+    /// Replace the conversation with a loaded session's history.
+    pub async fn reset_with(
+        &mut self,
+        session: Option<Arc<Mutex<Session>>>,
+        messages: Vec<Message>,
+    ) {
+        self.messages = messages;
         self.session = session;
         self.todos.lock().await.clear();
     }

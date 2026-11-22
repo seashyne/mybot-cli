@@ -13,11 +13,13 @@ use super::composer::Composer;
 use super::permission::PermissionModal;
 
 mod keys;
+mod palette;
 mod picker;
 mod slash;
 #[cfg(test)]
 mod tests;
 
+pub use palette::Palette;
 pub use picker::ModelPicker;
 #[cfg(test)]
 pub use picker::ModelItem;
@@ -25,10 +27,23 @@ pub use picker::ModelItem;
 pub struct Ctx {
     pub agent: Arc<Mutex<Agent>>,
     pub tx: mpsc::Sender<AgentEvent>,
+    pub ui_tx: mpsc::UnboundedSender<UiEvent>,
     pub skills: Arc<crate::skills::SkillSet>,
     pub plugins: Arc<crate::plugins::PluginSet>,
     pub mcp: Arc<crate::mcp::McpManager>,
     pub agents: Arc<crate::subagents::AgentSet>,
+    pub permissions: Arc<crate::permissions::PermissionEngine>,
+    pub tools: Arc<crate::tools::ToolRegistry>,
+}
+
+/// Background work that updates the UI without going through the agent loop.
+#[derive(Debug)]
+pub enum UiEvent {
+    Models {
+        provider: String,
+        models: Vec<String>,
+        error: Option<String>,
+    },
 }
 
 pub struct Status {
@@ -66,6 +81,8 @@ pub struct App {
     pub team: Option<crate::team::TeamSnapshot>,
     pub permission: Option<PermissionModal>,
     pub model_picker: Option<ModelPicker>,
+    pub palette: Option<Palette>,
+    pub last_prompt: Option<String>,
     pub status: Status,
     pub busy: bool,
     pub quit: bool,
@@ -90,6 +107,8 @@ impl App {
             team: None,
             permission: None,
             model_picker: None,
+            palette: None,
+            last_prompt: None,
             status,
             busy: false,
             quit: false,
@@ -128,6 +147,27 @@ impl App {
         reply: tokio::sync::oneshot::Sender<Decision>,
     ) {
         self.permission = Some(PermissionModal::new(request, reply));
+    }
+
+    pub fn handle_ui(&mut self, event: UiEvent) {
+        match event {
+            UiEvent::Models {
+                provider,
+                models,
+                error,
+            } => {
+                if let Some(picker) = &mut self.model_picker {
+                    picker.merge_models(&provider, &models);
+                    picker.pending = picker.pending.saturating_sub(1);
+                    if picker.pending == 0 {
+                        picker.loading = false;
+                    }
+                    if let Some(error) = error {
+                        picker.notes.push(format!("{provider}: {error}"));
+                    }
+                }
+            }
+        }
     }
 
     pub fn handle_agent(&mut self, event: AgentEvent) {
@@ -301,6 +341,7 @@ impl App {
         self.cancel = CancellationToken::new();
         self.auto_scroll = true;
         self.scroll_from_bottom = 0;
+        self.last_prompt = Some(prompt.clone());
 
         let agent = ctx.agent.clone();
         let tx = ctx.tx.clone();

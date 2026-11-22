@@ -157,6 +157,10 @@ impl ToolRegistry {
     pub fn names(&self) -> Vec<&str> {
         self.tools.keys().map(String::as_str).collect()
     }
+
+    pub fn all(&self) -> impl Iterator<Item = &Arc<dyn Tool>> {
+        self.tools.values()
+    }
 }
 
 impl Default for ToolRegistry {

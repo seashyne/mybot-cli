@@ -51,7 +51,7 @@ impl Prompter for DenyPrompter {
 }
 
 pub struct PermissionEngine {
-    pub mode: PermissionMode,
+    mode: std::sync::RwLock<PermissionMode>,
     pub cwd: PathBuf,
     rules: Vec<Rule>,
     session_rules: Mutex<Vec<Rule>>,
@@ -60,11 +60,25 @@ pub struct PermissionEngine {
 impl PermissionEngine {
     pub fn new(mode: PermissionMode, cwd: PathBuf, rules: Vec<Rule>) -> Self {
         Self {
-            mode,
+            mode: std::sync::RwLock::new(mode),
             cwd,
             rules,
             session_rules: Mutex::new(Vec::new()),
         }
+    }
+
+    pub fn mode(&self) -> PermissionMode {
+        *self.mode.read().unwrap_or_else(|error| error.into_inner())
+    }
+
+    /// Change the mode for this process (and every sub-agent or teammate that
+    /// shares the engine).
+    pub fn set_mode(&self, mode: PermissionMode) {
+        *self.mode.write().unwrap_or_else(|error| error.into_inner()) = mode;
+    }
+
+    pub fn rule_count(&self) -> usize {
+        self.rules.len()
     }
 
     pub async fn check(
@@ -85,7 +99,7 @@ impl PermissionEngine {
             };
         }
 
-        match self.mode {
+        match self.mode() {
             PermissionMode::Full => Decision::AllowOnce,
             PermissionMode::Ask => self.ask(request, prompter).await,
             PermissionMode::Auto => {
@@ -297,6 +311,19 @@ mod tests {
             .check(&request("bash", "ls -la"), None, &DenyPrompter)
             .await;
         assert_eq!(decision, Decision::Deny);
+    }
+
+    #[tokio::test]
+    async fn switching_the_mode_takes_effect_immediately() {
+        let engine = engine(PermissionMode::Ask);
+        assert_eq!(engine.mode(), PermissionMode::Ask);
+
+        engine.set_mode(PermissionMode::Full);
+        let decision = engine
+            .check(&request("write", "notes.txt"), None, &DenyPrompter)
+            .await;
+        assert_eq!(engine.mode(), PermissionMode::Full);
+        assert_eq!(decision, Decision::AllowOnce);
     }
 
     #[test]

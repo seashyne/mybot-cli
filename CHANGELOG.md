@@ -8,6 +8,42 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- **Command palette** — typing `/` in the composer opens a searchable list of
+  every slash command with its usage and description. Matching covers names,
+  aliases, and descriptions; `Tab` completes, `Enter` runs, and `Esc` closes.
+  Commands that need an idle session are marked while a turn is running.
+- **`/resume <id>`** — loads a previous session into the current window,
+  replaying the last 20 messages as transcript entries without tool payloads.
+  The id prefix from `/sessions` is enough.
+- **Runtime permission switching** — `/permissions [ask|auto|full]` reports the
+  current mode and switches it for the process, including sub-agents and
+  teammates that share the engine, then persists it to `config.toml`.
+- **`/tools`** — lists every registered tool with its execution mode and
+  description, including MCP tools.
+- **`/retry`** — sends the previous prompt again after a failed turn.
+- **Live model lists** — the `/model` picker queries each configured provider
+  (`/v1/models` or the Anthropic equivalent) in the background, merges the
+  results above the curated catalog, and marks models the account cannot use.
+  The picker gained a search field; typing an unknown id and pressing `Enter`
+  still uses it verbatim.
+
+### Changed
+
+- Slash commands now come from one catalog (`src/tui/commands.rs`) that drives
+  dispatch, `/help`, and the palette, so a command cannot exist in one place
+  and be missing from another. The dispatcher was split into
+  `slash/session.rs`, `slash/settings.rs`, and `slash/view.rs`.
+- The model picker's `custom` row was replaced by the search field: any text
+  that does not match a model is used as a model id.
+
+### Fixed
+
+- Model and completion URLs now recognise API roots other than `/v1`
+  (`/v4`, `/openai`, `/v1beta/openai`), so Gemini and Z.ai style base URLs no
+  longer end up with a duplicated segment.
+
 ## [0.2.0] - 2026-11-22
 
 Second release: MCP servers, project memory, sub-agents, teams, syntax
@@ -25,6 +61,9 @@ highlighting, and self-update.
   the current executable atomically. `--check` only reports whether an update
   exists; `--force` reinstalls the same version. npm-managed binaries are
   refused unless forced, and insecure download URLs are rejected.
+- **Release artifacts** — tagged builds publish raw binaries and `.tar.gz`
+  archives for Linux and macOS on x86_64 and arm64, plus `sha256sums.txt` that
+  `mybot update` verifies before installing.
 - **MCP servers** — connect to Model Context Protocol servers over stdio or
   streamable HTTP. Configuration is merged from `~/.mybot/mcp.toml` and
   `<project>/.mybot/mcp.toml` (project entries win), and every remote tool is
@@ -55,7 +94,8 @@ highlighting, and self-update.
 ### Changed
 
 - `build.rs` records the git commit, commit date, and target triple at build
-  time so version output identifies the exact binary.
+  time so version output identifies the exact binary, and re-runs when git refs
+  move so the embedded commit never goes stale.
 - The `Tool` trait now returns dynamic `&str` names and descriptions so MCP
   tools can be registered at runtime.
 - The TUI and headless runner now share the same MCP, sub-agent, and memory
@@ -69,6 +109,13 @@ highlighting, and self-update.
   tools.
 - README, the Thai manual, and the docs index describe MCP, memory, sub-agents,
   teams, and the line limit.
+
+### Fixed
+
+- The release workflow requested the retired `macos-13` runner labels, so both
+  macOS jobs stayed queued and no release was published. Builds now use
+  `macos-15-intel` for x86_64 and `macos-15` for arm64, and the `publish` job
+  creates the GitHub release with the checksums.
 
 ## [0.1.0] - 2026-11-22
 

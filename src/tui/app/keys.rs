@@ -7,13 +7,14 @@ use super::{App, Ctx};
 impl App {
     pub(crate) fn handle_paste(&mut self, text: &str) {
         if let Some(picker) = &mut self.model_picker {
-            if let Some(buffer) = &mut picker.custom {
-                buffer.push_str(text.trim());
-            }
+            picker.query.push_str(text.trim());
+            picker.selected = 0;
+            picker.error = None;
             return;
         }
         if self.permission.is_none() {
             self.composer.insert_str(text);
+            self.sync_palette();
         }
     }
 
@@ -22,6 +23,9 @@ impl App {
             return;
         }
         if self.handle_permission_key(key) {
+            return;
+        }
+        if self.handle_palette_key(key, ctx) {
             return;
         }
 
@@ -88,6 +92,7 @@ impl App {
             KeyCode::Char(value) if !control && !alt => self.composer.insert_char(value),
             _ => {}
         }
+        self.sync_palette();
     }
 
     pub(crate) fn handle_permission_key(&mut self, key: KeyEvent) -> bool {

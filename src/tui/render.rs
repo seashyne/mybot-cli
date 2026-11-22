@@ -30,6 +30,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         _ => 0,
     };
     let composer_height = (app.composer.lines().len() as u16).clamp(1, 6) + 2;
+    let palette_height = if app.palette.is_some() {
+        app.palette_matches().len().clamp(1, 8) as u16 + 3
+    } else {
+        0
+    };
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -37,6 +42,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             Constraint::Min(3),
             Constraint::Length(todo_height),
             Constraint::Length(team_height),
+            Constraint::Length(palette_height),
             Constraint::Length(composer_height),
             Constraint::Length(1),
         ])
@@ -49,8 +55,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     if team_height > 0 {
         draw_team(frame, app, chunks[2]);
     }
-    draw_composer(frame, app, chunks[3]);
-    draw_status(frame, app, chunks[4]);
+    if palette_height > 0 {
+        overlays::draw_palette(frame, app, chunks[3]);
+    }
+    draw_composer(frame, app, chunks[4]);
+    draw_status(frame, app, chunks[5]);
 
     if app.permission.is_some() {
         overlays::draw_permission(frame, app, area);
@@ -248,7 +257,13 @@ fn draw_composer(frame: &mut Frame, app: &App, area: Rect) {
     } else {
         Style::default().fg(theme::ACCENT)
     };
-    let title = if app.busy { " working… " } else { " message " };
+    let title = if app.palette.is_some() {
+        " command "
+    } else if app.busy {
+        " working… "
+    } else {
+        " message "
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -300,6 +315,8 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
 
     if let Some((message, _)) = &app.info {
         spans.push(Span::styled(message.clone(), Style::default().fg(theme::TOOL)));
+    } else if !app.busy {
+        spans.push(Span::styled(" / commands ", Style::default().fg(theme::DIM)));
     }
 
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

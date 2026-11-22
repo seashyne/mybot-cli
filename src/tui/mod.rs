@@ -1,4 +1,5 @@
 mod app;
+mod commands;
 mod composer;
 mod highlight;
 mod markdown;
@@ -26,7 +27,7 @@ use crate::providers;
 use crate::session::Session;
 use crate::tools::ToolRegistry;
 
-use app::{App, Ctx, Status};
+use app::{App, Ctx, Status, UiEvent};
 
 pub struct TuiOptions {
     pub cwd: PathBuf,
@@ -156,14 +157,16 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     });
 
     let (tx, mut rx) = mpsc::channel::<AgentEvent>(512);
+    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<UiEvent>();
     let team = Arc::new(crate::team::Team::new(runtime.clone(), tx.clone()));
     registry.register(Arc::new(crate::subagents::AgentTool::new(runtime)));
     crate::team::register_lead(&mut registry, team.clone());
+    let tools = Arc::new(registry);
 
     let agent = Arc::new(Mutex::new(Agent::new(AgentOptions {
         provider,
-        tools: Arc::new(registry),
-        permissions,
+        tools: tools.clone(),
+        permissions: permissions.clone(),
         prompter,
         system,
         cwd: cwd.clone(),
@@ -193,10 +196,13 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     let ctx = Ctx {
         agent: agent.clone(),
         tx: tx.clone(),
+        ui_tx,
         skills,
         plugins,
         mcp: mcp.clone(),
         agents,
+        permissions: permissions.clone(),
+        tools,
     };
 
     app.start_initial(&ctx);
@@ -214,6 +220,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
                 _ => {}
             },
             Some(agent_event) = rx.recv() => app.handle_agent(agent_event),
+            Some(ui_event) = ui_rx.recv() => app.handle_ui(ui_event),
             Some(ask) = perm_rx.recv() => app.set_permission(ask.request, ask.reply),
             _ = ticker.tick() => app.tick(),
         }

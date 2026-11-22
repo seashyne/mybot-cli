@@ -147,8 +147,10 @@ export ANTHROPIC_API_KEY=sk-ant-...
 mybot
 ```
 
-Switch models at any time from inside the TUI with `/model` — the picker writes
-the choice back to `config.toml` and keeps the conversation.
+Switch models at any time from inside the TUI with `/model` — the picker lists
+the curated models for every configured provider, then replaces them with the
+live list each API returns. The choice is written back to `config.toml` and the
+conversation is kept.
 
 OpenAI-compatible providers can also be added without editing files:
 
@@ -281,10 +283,15 @@ Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
 | `Up` / `Down` | history when empty, cursor movement otherwise |
 | `PgUp` / `PgDn` | scroll the transcript |
 | `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
+| `/` | open the command palette |
 
-Slash commands: `/help`, `/new`, `/model`, `/sessions`, `/status`, `/version`,
-`/init`, `/compact`, `/skills`, `/skill`, `/agents`, `/memory`, `/remember`,
-`/mcp`, `/team`, `/quit`.
+Typing `/` opens a searchable command palette above the composer; `Tab`
+completes the highlighted command, `Enter` runs it, and `Esc` closes it.
+
+Slash commands: `/help`, `/new`, `/model`, `/permissions`, `/tools`, `/context`,
+`/sessions`, `/resume`, `/status`, `/version`, `/compact`, `/retry`, `/stop`,
+`/export`, `/config`, `/doctor`, `/keys`, `/init`, `/skills`, `/skill`,
+`/agents`, `/memory`, `/remember`, `/mcp`, `/team`, `/quit`.
 
 ### Compacting a session
 

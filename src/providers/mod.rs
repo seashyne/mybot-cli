@@ -1,4 +1,5 @@
 pub mod anthropic;
+pub mod catalog;
 pub mod mock;
 pub mod openai;
 pub mod presets;
@@ -229,6 +230,14 @@ pub fn build(resolved: &Resolved) -> Result<Box<dyn Provider>, ProviderError> {
     match resolved.kind {
         ProviderKind::Anthropic => Ok(Box::new(anthropic::AnthropicProvider::new(resolved.clone())?)),
         ProviderKind::OpenAi => Ok(Box::new(openai::OpenAiProvider::new(resolved.clone())?)),
+    }
+}
+
+/// List the chat models a provider exposes, for the interactive picker.
+pub async fn list_models(resolved: &Resolved) -> Result<Vec<String>, ProviderError> {
+    match resolved.kind {
+        ProviderKind::Anthropic => anthropic::list_models(resolved).await,
+        ProviderKind::OpenAi => openai::list_models(resolved).await,
     }
 }
 

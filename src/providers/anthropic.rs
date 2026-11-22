@@ -34,6 +34,54 @@ fn messages_url(base: &str) -> String {
     }
 }
 
+/// List the models the account can call (newest first, as the API returns them).
+pub async fn list_models(resolved: &Resolved) -> Result<Vec<String>, ProviderError> {
+    let client = super::http_client()?;
+    let base = resolved.base_url.trim_end_matches('/');
+    let url = if base.ends_with("/v1") {
+        format!("{base}/models?limit=100")
+    } else {
+        format!("{base}/v1/models?limit=100")
+    };
+
+    let mut request = client.get(&url).header("anthropic-version", "2023-06-01");
+    if !resolved.api_key.is_empty() {
+        request = request.header("x-api-key", &resolved.api_key);
+    }
+    for (name, value) in &resolved.headers {
+        request = request.header(name, value);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| ProviderError::network(format!("cannot list models at {url}: {e}")))?;
+    let status = response.status();
+    if !status.is_success() {
+        let retry_after = super::retry_after_header(&response);
+        let text = response.text().await.unwrap_or_default();
+        return Err(ProviderError::from_status(status.as_u16(), &text)
+            .with_retry_after(retry_after));
+    }
+
+    let value: Value = response
+        .json()
+        .await
+        .map_err(|e| ProviderError::protocol(format!("invalid model list: {e}")))?;
+    Ok(value
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+                .filter(|id| !id.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
 pub fn build_body(req: &CompletionRequest) -> Value {
     let mut body = json!({
         "model": req.model,

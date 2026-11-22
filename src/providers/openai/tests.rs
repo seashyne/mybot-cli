@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::stream::{map_finish_reason, normalize_event};
-use super::{build_body, messages_to_wire, pick_model};
+use super::{build_body, completions_url, messages_to_wire, models_url, pick_model};
 use crate::protocol::{Message, StopReason};
 use crate::providers::sse::SseEvent;
 use crate::providers::{CompletionRequest, ProviderEvent, ToolSpec};
@@ -107,4 +107,28 @@ fn maps_finish_reasons() {
     assert_eq!(map_finish_reason("tool_calls"), StopReason::ToolUse);
     assert_eq!(map_finish_reason("length"), StopReason::MaxTokens);
     assert_eq!(map_finish_reason("stop"), StopReason::EndTurn);
+}
+
+#[test]
+fn urls_follow_the_shape_of_the_base() {
+    assert_eq!(
+        models_url("https://api.openai.com/v1"),
+        "https://api.openai.com/v1/models"
+    );
+    assert_eq!(
+        models_url("https://generativelanguage.googleapis.com/v1beta/openai/"),
+        "https://generativelanguage.googleapis.com/v1beta/openai/models"
+    );
+    assert_eq!(
+        models_url("http://127.0.0.1:1234"),
+        "http://127.0.0.1:1234/v1/models"
+    );
+    assert_eq!(
+        completions_url("https://generativelanguage.googleapis.com/v1beta/openai/"),
+        "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    );
+    assert_eq!(
+        completions_url("https://api.z.ai/api/paas/v4"),
+        "https://api.z.ai/api/paas/v4/chat/completions"
+    );
 }

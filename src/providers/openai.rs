@@ -90,18 +90,72 @@ fn models_url(base: &str) -> String {
     let base = base.trim_end_matches('/');
     if let Some(root) = base.strip_suffix("/chat/completions") {
         join_url(root, "models")
-    } else if base.ends_with("/v1") {
+    } else if has_api_root(base) {
         join_url(base, "models")
     } else {
         join_url(base, "v1/models")
     }
 }
 
+/// True when the base URL already ends at an API root (`/v1`, `/v4`, `/openai`).
+fn has_api_root(base: &str) -> bool {
+    let last = base.rsplit('/').next().unwrap_or("");
+    last == "openai"
+        || (last.len() > 1
+            && last.starts_with('v')
+            && last[1..].chars().next().is_some_and(|c| c.is_ascii_digit()))
+}
+
+/// Ask an OpenAI-compatible server which chat models it serves.
+pub async fn list_models(resolved: &Resolved) -> Result<Vec<String>, ProviderError> {
+    let client = super::http_client()?;
+    let url = models_url(&resolved.base_url);
+    let mut request = client.get(&url);
+    if !resolved.api_key.is_empty() {
+        request = request.bearer_auth(&resolved.api_key);
+    }
+    for (name, value) in &resolved.headers {
+        request = request.header(name, value);
+    }
+
+    let response = request
+        .send()
+        .await
+        .map_err(|e| ProviderError::network(format!("cannot list models at {url}: {e}")))?;
+    let status = response.status();
+    if !status.is_success() {
+        let retry_after = super::retry_after_header(&response);
+        let text = response.text().await.unwrap_or_default();
+        return Err(ProviderError::from_status(status.as_u16(), &text)
+            .with_retry_after(retry_after));
+    }
+
+    let value: Value = response
+        .json()
+        .await
+        .map_err(|e| ProviderError::protocol(format!("invalid model list: {e}")))?;
+    let mut models: Vec<String> = value
+        .get("data")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+                .filter(|id| !id.is_empty() && !looks_like_embedding(id))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    models.sort();
+    models.dedup();
+    Ok(models)
+}
+
 fn completions_url(base: &str) -> String {
     let base = base.trim_end_matches('/');
     if base.ends_with("/chat/completions") {
         base.to_string()
-    } else if base.ends_with("/v1") {
+    } else if has_api_root(base) {
         join_url(base, "chat/completions")
     } else {
         join_url(base, "v1/chat/completions")
