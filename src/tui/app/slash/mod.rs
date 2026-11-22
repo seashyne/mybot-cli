@@ -12,8 +12,10 @@ impl App {
         match name {
             "/quit" | "/exit" => self.quit = true,
             "/help" => self.help_command(),
+            "/changelog" => self.changelog_command(),
             "/new" | "/clear" => self.new_session(ctx),
             "/model" => self.model_command(args, ctx),
+            "/effort" | "/thinking" => self.effort_command(args, ctx),
             "/permissions" | "/permission" | "/mode" => self.permissions_command(args, ctx),
             "/tools" => self.tools_command(ctx),
             "/context" | "/ctx" => self.context_command(ctx),

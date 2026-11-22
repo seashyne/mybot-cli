@@ -198,6 +198,49 @@ impl Composer {
             }
         }
     }
+
+    /// Return `(at_char_col, query)` when the cursor is inside a whitespace-delimited `@query`.
+    pub fn mention_at_cursor(&self) -> Option<(usize, String)> {
+        let line = self.lines.get(self.row)?;
+        let chars: Vec<char> = line.chars().collect();
+        let col = self.col.min(chars.len());
+        let mut start = col;
+        while start > 0 && !chars[start - 1].is_whitespace() {
+            start -= 1;
+        }
+        if start < col && chars[start] == '@' {
+            let query: String = chars[start + 1..col].iter().collect();
+            return Some((start, query));
+        }
+        None
+    }
+
+    /// Replace the `@query` token starting at `start_col` up to the cursor with `@insertion`.
+    pub fn complete_mention(&mut self, start_col: usize, insertion: &str) {
+        let Some(line) = self.lines.get_mut(self.row) else {
+            return;
+        };
+        let total = line.chars().count();
+        let start = start_col.min(total);
+        let end = self.col.min(total);
+        if start > end {
+            return;
+        }
+        let start_byte = byte_index(line, start);
+        let end_byte = byte_index(line, end);
+        let needs_space = line[end_byte..]
+            .chars()
+            .next()
+            .map(|ch| !ch.is_whitespace())
+            .unwrap_or(true);
+        let replacement = if needs_space {
+            format!("@{insertion} ")
+        } else {
+            format!("@{insertion}")
+        };
+        line.replace_range(start_byte..end_byte, &replacement);
+        self.col = start + replacement.chars().count();
+    }
 }
 
 fn byte_index(line: &str, char_index: usize) -> usize {
@@ -273,5 +316,19 @@ mod tests {
         composer.left();
         composer.insert_char('!');
         assert_eq!(composer.text(), "héll!o");
+    }
+
+    #[test]
+    fn detects_and_completes_mentions() {
+        let mut composer = Composer::new();
+        composer.insert_str("check @src/ma");
+        assert_eq!(composer.mention_at_cursor(), Some((6, "src/ma".into())));
+        composer.complete_mention(6, "src/main.rs");
+        assert_eq!(composer.text(), "check @src/main.rs ");
+        assert_eq!(composer.mention_at_cursor(), None);
+
+        composer.clear();
+        composer.insert_str("foo@bar");
+        assert_eq!(composer.mention_at_cursor(), None);
     }
 }

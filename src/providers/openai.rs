@@ -209,6 +209,12 @@ pub fn build_body(req: &CompletionRequest) -> Value {
             body["temperature"] = json!(temperature);
         }
 
+    if let Some(effort) = crate::config::EffortLevel::from_budget(req.thinking_budget)
+        .openai_reasoning_effort()
+    {
+        body["reasoning_effort"] = json!(effort);
+    }
+
     body
 }
 

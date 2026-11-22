@@ -4,7 +4,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
-use crate::tui::app::App;
+use crate::tui::app::{App, MentionKind};
 use crate::tui::theme;
 
 pub(super) fn draw_permission(frame: &mut Frame, app: &App, area: Rect) {
@@ -251,6 +251,84 @@ pub(super) fn draw_palette(frame: &mut Frame, app: &App, area: Rect) {
     }
     lines.push(Line::from(Span::styled(
         "↑↓ move · Tab complete · Enter run · Esc close",
+        Style::default().fg(theme::DIM),
+    )));
+
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+pub(super) fn draw_mention(frame: &mut Frame, app: &App, area: Rect) {
+    let matches = app.mention_matches();
+    let selected = app
+        .mention
+        .as_ref()
+        .map(|mention| mention.selected)
+        .unwrap_or(0);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme::USER))
+        .title(Span::styled(
+            " @ files & plugins ",
+            Style::default()
+                .fg(theme::USER)
+                .add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let rows = inner.height.saturating_sub(1) as usize;
+    let start = if rows > 0 && selected >= rows {
+        selected + 1 - rows
+    } else {
+        0
+    };
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if matches.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  no matching file, plugin, or skill",
+            Style::default().fg(theme::DIM),
+        )));
+    } else {
+        let label_width = inner.width.saturating_sub(14) as usize;
+        for (index, item) in matches.iter().enumerate().skip(start).take(rows) {
+            let is_selected = index == selected;
+            let marker = if is_selected { "▸ " } else { "  " };
+            let tag_color = match item.kind {
+                MentionKind::File => theme::DIM,
+                MentionKind::Plugin => theme::ACCENT,
+                MentionKind::Skill => theme::CODE,
+            };
+            let name_style = if is_selected {
+                Style::default()
+                    .fg(theme::USER)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(theme::ASSISTANT)
+            };
+            let text = if item.detail.is_empty() {
+                item.label.clone()
+            } else {
+                format!("{}  {}", item.label, item.detail)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(marker, Style::default().fg(theme::USER)),
+                Span::styled(
+                    format!("{:<9}", format!("[{}]", item.kind.label())),
+                    Style::default().fg(tag_color),
+                ),
+                Span::styled(truncate(&text, label_width), name_style),
+            ]));
+        }
+    }
+
+    while lines.len() < rows {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(Span::styled(
+        "↑↓ move · Tab/Enter insert · Esc close",
         Style::default().fg(theme::DIM),
     )));
 

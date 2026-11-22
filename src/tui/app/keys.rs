@@ -5,7 +5,7 @@ use crate::permissions::Decision;
 use super::{App, Ctx};
 
 impl App {
-    pub(crate) fn handle_paste(&mut self, text: &str) {
+    pub(crate) fn handle_paste(&mut self, text: &str, ctx: &Ctx) {
         if let Some(picker) = &mut self.model_picker {
             picker.query.push_str(text.trim());
             picker.selected = 0;
@@ -15,6 +15,7 @@ impl App {
         if self.permission.is_none() {
             self.composer.insert_str(text);
             self.sync_palette();
+            self.sync_mention(ctx);
         }
     }
 
@@ -26,6 +27,9 @@ impl App {
             return;
         }
         if self.handle_palette_key(key, ctx) {
+            return;
+        }
+        if self.handle_mention_key(key) {
             return;
         }
 
@@ -93,6 +97,7 @@ impl App {
             _ => {}
         }
         self.sync_palette();
+        self.sync_mention(ctx);
     }
 
     pub(crate) fn handle_permission_key(&mut self, key: KeyEvent) -> bool {

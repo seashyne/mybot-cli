@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::super::{App, Ctx, Entry, ModelPicker, UiEvent};
-use crate::config::{Config, PermissionMode};
+use crate::config::{Config, EffortLevel, PermissionMode};
 use crate::memory::{MemoryKind, MemoryStore};
 
 impl App {
@@ -116,6 +116,46 @@ impl App {
                 "permission mode: {} (not saved: {error})",
                 mode.label()
             )),
+        }
+    }
+
+    pub(super) fn effort_command(&mut self, args: &str, ctx: &Ctx) {
+        if args.is_empty() {
+            let current = EffortLevel::from_budget(self.status.thinking_budget);
+            let mut text = format!("reasoning effort: {}\n", current.label());
+            text.push_str(
+                "  off     no extended thinking budget\n\
+                 low     light reasoning (4k budget)\n\
+                 medium  balanced reasoning (16k budget)\n\
+                 high    deep reasoning (32k budget)\n\
+                 change with /effort off|low|medium|high",
+            );
+            self.transcript.push(Entry::Info(text));
+            return;
+        }
+
+        let Some(level) = EffortLevel::parse(args) else {
+            self.info("usage: /effort [off|low|medium|high]");
+            return;
+        };
+        let budget = level.budget();
+        self.status.thinking_budget = budget;
+        let agent = ctx.agent.clone();
+        tokio::spawn(async move {
+            agent.lock().await.set_thinking_budget(budget);
+        });
+
+        let provider_name = self.status.provider.clone();
+        let saved = Config::load().and_then(|mut config| {
+            if let Some(entry) = config.providers.get_mut(&provider_name) {
+                entry.thinking_budget = budget;
+                config.save()?;
+            }
+            Ok(())
+        });
+        match saved {
+            Ok(()) => self.info(format!("effort: {} (saved)", level.label())),
+            Err(error) => self.info(format!("effort: {} (not saved: {error})", level.label())),
         }
     }
 

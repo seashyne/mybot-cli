@@ -236,7 +236,7 @@ impl App {
     }
 
     pub(super) fn apply_model(&mut self, ctx: &Ctx, provider: &str, model: &str) {
-        let attempt = (|| -> crate::error::Result<()> {
+        let attempt = (|| -> crate::error::Result<Option<u32>> {
             let mut config = Config::load()?;
             let entry = config.providers.get_mut(provider).ok_or_else(|| {
                 crate::error::AppError::config(format!("unknown provider '{provider}'"))
@@ -249,24 +249,26 @@ impl App {
                 Arc::from(providers::build(&resolved)?);
             config.save()?;
 
+            let thinking_budget = resolved.thinking_budget;
             let swap = ProviderSwap {
                 provider: built,
                 max_tokens: resolved.max_tokens,
                 temperature: resolved.temperature,
-                thinking_budget: resolved.thinking_budget,
+                thinking_budget,
                 retry: providers::RetryPolicy::from_resolved(&resolved),
             };
             let agent = ctx.agent.clone();
             tokio::spawn(async move {
                 agent.lock().await.set_provider(swap);
             });
-            Ok(())
+            Ok(thinking_budget)
         })();
 
         match attempt {
-            Ok(()) => {
+            Ok(thinking_budget) => {
                 self.status.provider = provider.to_string();
                 self.status.model = model.to_string();
+                self.status.thinking_budget = thinking_budget;
                 self.model_picker = None;
                 self.transcript.push(super::Entry::Info(format!(
                     "switched to {provider}/{model} (saved to config)"

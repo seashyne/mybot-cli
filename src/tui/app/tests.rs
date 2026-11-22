@@ -8,6 +8,7 @@ fn app() -> App {
             provider: "mock".into(),
             model: "mock-model".into(),
             permission: crate::config::PermissionMode::Auto,
+            thinking_budget: None,
             session: "abc12345".into(),
             input_tokens: 0,
             output_tokens: 0,

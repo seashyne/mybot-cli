@@ -132,3 +132,14 @@ fn urls_follow_the_shape_of_the_base() {
         "https://api.z.ai/api/paas/v4/chat/completions"
     );
 }
+
+#[test]
+fn reasoning_effort_is_sent_only_when_thinking_budget_is_positive() {
+    let body = build_body(&req());
+    assert!(body.get("reasoning_effort").is_none());
+
+    let mut request = req();
+    request.thinking_budget = Some(32_768);
+    let body = build_body(&request);
+    assert_eq!(body["reasoning_effort"], "high");
+}

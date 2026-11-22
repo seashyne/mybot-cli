@@ -9,12 +9,19 @@ impl App {
             .push(Entry::Info(crate::tui::commands::help_text()));
     }
 
+    pub(super) fn changelog_command(&mut self) {
+        self.transcript
+            .push(Entry::Info(crate::version::CHANGELOG.trim().to_string()));
+    }
+
     pub(super) fn status_command(&mut self, ctx: &Ctx) {
+        let effort = crate::config::EffortLevel::from_budget(self.status.thinking_budget);
         self.transcript.push(Entry::Info(format!(
-            "version: {}\nprovider: {}\nmodel: {}\npermission: {}\nsession: {}\ntokens: ↑{} ↓{}\ntools: {} · skills: {} · agents: {} · mcp: {}",
+            "version: {}\nprovider: {}\nmodel: {}\neffort: {}\npermission: {}\nsession: {}\ntokens: ↑{} ↓{}\ntools: {} · skills: {} · agents: {} · mcp: {}",
             crate::version::SHORT,
             self.status.provider,
             self.status.model,
+            effort.label(),
             ctx.permissions.mode().label(),
             self.status.session,
             self.status.input_tokens,
@@ -230,8 +237,10 @@ impl App {
              Ctrl+C             cancel the turn, or exit when idle\n\
              Ctrl+D             exit when the composer is empty\n\
              PgUp/PgDn          scroll the transcript\n\
+             @                  mention a file, plugin, or skill\n\
              /                  open the command palette\n\
-             /model             searchable model picker"
+             /model             searchable model picker\n\
+             /effort            set reasoning effort"
                 .into(),
         ));
     }

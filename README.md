@@ -283,15 +283,18 @@ Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
 | `Up` / `Down` | history when empty, cursor movement otherwise |
 | `PgUp` / `PgDn` | scroll the transcript |
 | `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
+| `@` | mention a workspace file, plugin, or skill |
 | `/` | open the command palette |
 
 Typing `/` opens a searchable command palette above the composer; `Tab`
 completes the highlighted command, `Enter` runs it, and `Esc` closes it.
+Typing `@` opens an autocomplete popup for workspace files, plugins, and skills.
 
-Slash commands: `/help`, `/new`, `/model`, `/permissions`, `/tools`, `/context`,
-`/sessions`, `/resume`, `/status`, `/version`, `/compact`, `/retry`, `/stop`,
-`/export`, `/config`, `/doctor`, `/keys`, `/init`, `/skills`, `/skill`,
-`/agents`, `/memory`, `/remember`, `/mcp`, `/team`, `/quit`.
+Slash commands: `/help`, `/changelog`, `/new`, `/model`, `/effort`,
+`/permissions`, `/tools`, `/context`, `/sessions`, `/resume`, `/status`,
+`/version`, `/compact`, `/retry`, `/stop`, `/export`, `/config`, `/doctor`,
+`/keys`, `/init`, `/skills`, `/skill`, `/agents`, `/memory`, `/remember`,
+`/mcp`, `/team`, `/quit`.
 
 ### Compacting a session
 

@@ -10,6 +10,45 @@ pub const GIT_DATE: &str = env!("MYBOT_GIT_DATE");
 pub const TARGET: &str = env!("MYBOT_TARGET");
 /// One-line version used by `--version`.
 pub const SHORT: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("MYBOT_GIT_SHA"), ")");
+/// Embedded release notes displayed by `/changelog` and the welcome card.
+pub const CHANGELOG: &str = include_str!("../CHANGELOG.md");
+
+/// Extract compact one-line bullet highlights from the latest release section.
+pub fn latest_changelog_highlights(limit: usize) -> Vec<String> {
+    let mut in_latest = false;
+    let mut items: Vec<String> = Vec::new();
+
+    for line in CHANGELOG.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("## [") {
+            if trimmed.starts_with("## [Unreleased]") {
+                continue;
+            }
+            if in_latest {
+                break;
+            }
+            in_latest = true;
+            continue;
+        }
+        if !in_latest {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("- ") {
+            if items.len() >= limit {
+                break;
+            }
+            items.push(rest.replace("**", ""));
+        } else if line.starts_with("  ")
+            && !trimmed.is_empty()
+            && let Some(last) = items.last_mut()
+        {
+            last.push(' ');
+            last.push_str(&trimmed.replace("**", ""));
+        }
+    }
+
+    items
+}
 
 pub fn profile() -> &'static str {
     if cfg!(debug_assertions) {
@@ -64,5 +103,12 @@ mod tests {
         assert_eq!(value["name"], "mybot");
         assert_eq!(value["version"], VERSION);
         assert_eq!(value["target"], TARGET);
+    }
+
+    #[test]
+    fn extracts_latest_changelog_highlights() {
+        let items = latest_changelog_highlights(2);
+        assert_eq!(items.len(), 2);
+        assert!(!items[0].contains("**"));
     }
 }

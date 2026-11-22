@@ -52,10 +52,26 @@ pub const COMMANDS: &[CommandSpec] = &[
         idle_only: false,
     },
     CommandSpec {
+        name: "changelog",
+        aliases: &[],
+        args: "",
+        description: "Show recent release notes",
+        category: Category::Help,
+        idle_only: false,
+    },
+    CommandSpec {
         name: "model",
         aliases: &[],
         args: "[provider/model]",
         description: "Switch model with a searchable picker",
+        category: Category::Model,
+        idle_only: false,
+    },
+    CommandSpec {
+        name: "effort",
+        aliases: &["thinking"],
+        args: "[off|low|medium|high]",
+        description: "Show or set reasoning effort level",
         category: Category::Model,
         idle_only: false,
     },
@@ -339,41 +355,10 @@ pub fn help_text() -> String {
     text.push_str(
         "\nkeys: Enter send · Shift+Enter newline · Esc cancel/clear · Ctrl+C cancel/exit\n\
          PgUp/PgDn scroll · Up/Down history when the composer is empty\n\
-         typing / opens the command palette · /model opens a searchable picker",
+         @ inserts a file, plugin, or skill · / opens the command palette · /model picks models",
     );
     text
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn aliases_resolve_to_the_same_command() {
-        assert_eq!(find("clear").unwrap().name, "new");
-        assert_eq!(find("exit").unwrap().name, "quit");
-        assert_eq!(find("ctx").unwrap().name, "context");
-        assert_eq!(find("/model").unwrap().name, "model");
-    }
-
-    #[test]
-    fn prefix_queries_rank_the_intended_command_first() {
-        assert_eq!(matches("mod")[0].name, "model");
-        assert_eq!(matches("perm")[0].name, "permissions");
-        assert_eq!(matches("resu")[0].name, "resume");
-        assert_eq!(matches("doc")[0].name, "doctor");
-    }
-
-    #[test]
-    fn every_command_appears_in_help() {
-        let help = help_text();
-        for command in COMMANDS {
-            assert!(help.contains(&format!("/{}", command.name)), "missing {}", command.name);
-        }
-    }
-
-    #[test]
-    fn unknown_query_returns_nothing() {
-        assert!(matches("zzzzzz").is_empty());
-    }
-}
+mod tests;

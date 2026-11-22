@@ -107,3 +107,60 @@ impl ProviderConfig {
         Self::defaults_for(ProviderKind::OpenAi)
     }
 }
+
+/// Reasoning / thinking effort level mapped to provider thinking budgets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffortLevel {
+    Off,
+    Low,
+    Medium,
+    High,
+}
+
+impl EffortLevel {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "off" | "none" | "0" => Some(Self::Off),
+            "low" => Some(Self::Low),
+            "medium" | "med" => Some(Self::Medium),
+            "high" | "max" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+
+    pub fn budget(self) -> Option<u32> {
+        match self {
+            Self::Off => None,
+            Self::Low => Some(4_096),
+            Self::Medium => Some(16_384),
+            Self::High => Some(32_768),
+        }
+    }
+
+    pub fn from_budget(budget: Option<u32>) -> Self {
+        match budget {
+            None | Some(0) => Self::Off,
+            Some(tokens) if tokens <= 6_000 => Self::Low,
+            Some(tokens) if tokens <= 20_000 => Self::Medium,
+            Some(_) => Self::High,
+        }
+    }
+
+    pub fn openai_reasoning_effort(self) -> Option<&'static str> {
+        match self {
+            Self::Off => None,
+            Self::Low => Some("low"),
+            Self::Medium => Some("medium"),
+            Self::High => Some("high"),
+        }
+    }
+}

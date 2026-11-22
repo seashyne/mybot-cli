@@ -438,14 +438,17 @@ mybot provider remove local
 - คำสั่งที่แก้ session (`/new`, `/resume`, `/compact`, `/retry`) จะบอกว่า
   "waits for the turn" ถ้ามี turn กำลังทำงานอยู่
 - รายการเดียวกับ `/help` เพราะอ่านจาก catalog เดียวกัน
+- พิมพ์ `@` ในช่องพิมพ์เพื่อเปิด autocomplete แทรกชื่อไฟล์ในโปรเจกต์, plugin หรือ skill
 
 ### Slash commands
 
 | คำสั่ง | การทำงาน |
 | --- | --- |
 | `/help` | แสดงคำสั่งและปุ่มลัด |
+| `/changelog` | แสดงบันทึกการเปลี่ยนแปลงของแต่ละเวอร์ชัน |
 | `/new` หรือ `/clear` | เริ่ม session ใหม่ |
 | `/model [provider/model]` | เปิด picker เลือก model (กรองได้, ดึงรายการจริงจาก API) |
+| `/effort [off\|low\|medium\|high]` | ดูหรือปรับระดับ reasoning effort (บันทึกทันที) |
 | `/permissions [ask\|auto\|full]` | ดูหรือเปลี่ยน permission mode (บันทึกทันที) |
 | `/tools` | แสดง tools ที่โมเดลเรียกได้ พร้อมโหมดการทำงาน |
 | `/context` | แสดงขนาด system prompt, บทสนทนา, tokens |

@@ -183,6 +183,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         provider: resolved.name.clone(),
         model: resolved.model.clone(),
         permission,
+        thinking_budget: resolved.thinking_budget,
         session: session_id,
         input_tokens: 0,
         output_tokens: 0,
@@ -216,7 +217,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         tokio::select! {
             Some(event) = input_rx.recv() => match event {
                 Event::Key(key) => app.handle_key(key, &ctx),
-                Event::Paste(text) => app.handle_paste(&text),
+                Event::Paste(text) => app.handle_paste(&text, &ctx),
                 _ => {}
             },
             Some(agent_event) = rx.recv() => app.handle_agent(agent_event),

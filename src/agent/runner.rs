@@ -113,6 +113,10 @@ impl Agent {
         self.retry = options.retry;
     }
 
+    pub fn set_thinking_budget(&mut self, budget: Option<u32>) {
+        self.thinking_budget = budget;
+    }
+
     /// Run one user turn to completion, including any tool-call iterations.
     pub async fn run_turn(
         &mut self,

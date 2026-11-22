@@ -13,12 +13,16 @@ use super::composer::Composer;
 use super::permission::PermissionModal;
 
 mod keys;
+mod mention;
 mod palette;
 mod picker;
 mod slash;
 #[cfg(test)]
 mod tests;
 
+pub use mention::{Mention, MentionKind};
+#[cfg(test)]
+pub use mention::MentionItem;
 pub use palette::Palette;
 pub use picker::ModelPicker;
 #[cfg(test)]
@@ -50,6 +54,7 @@ pub struct Status {
     pub provider: String,
     pub model: String,
     pub permission: crate::config::PermissionMode,
+    pub thinking_budget: Option<u32>,
     pub session: String,
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -82,6 +87,8 @@ pub struct App {
     pub permission: Option<PermissionModal>,
     pub model_picker: Option<ModelPicker>,
     pub palette: Option<Palette>,
+    pub mention: Option<Mention>,
+    pub(crate) mention_dismissed: Option<(usize, usize)>,
     pub last_prompt: Option<String>,
     pub status: Status,
     pub busy: bool,
@@ -108,6 +115,8 @@ impl App {
             permission: None,
             model_picker: None,
             palette: None,
+            mention: None,
+            mention_dismissed: None,
             last_prompt: None,
             status,
             busy: false,
@@ -212,8 +221,12 @@ impl App {
                 });
             }
             AgentEvent::Usage { input, output } => {
-                self.status.input_tokens = input;
-                self.status.output_tokens = output;
+                if input > 0 {
+                    self.status.input_tokens = input;
+                }
+                if output > 0 {
+                    self.status.output_tokens = output;
+                }
             }
             AgentEvent::TurnEnd { .. } => {
                 self.finish_streaming();
