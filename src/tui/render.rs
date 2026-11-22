@@ -85,7 +85,7 @@ fn transcript_lines(app: &App) -> Vec<Line<'static>> {
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(
-                "mybot cli",
+                format!("mybot cli {}", crate::version::VERSION),
                 Style::default()
                     .fg(theme::ACCENT)
                     .add_modifier(Modifier::BOLD),

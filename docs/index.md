@@ -67,6 +67,10 @@ permalink: /
     <p>บันทึก decisions ของโปรเจกต์ข้าม session พร้อม index ใน system prompt</p>
   </div>
   <div class="feature">
+    <h3>Version & self-update</h3>
+    <p><code>mybot version</code> บอก commit/target และ <code>mybot update</code> ตรวจ checksum ก่อนติดตั้ง</p>
+  </div>
+  <div class="feature">
     <h3>Setup ครั้งแรก</h3>
     <p>หน้าจอเลือก provider → ใส่ key → เลือก model แล้วเริ่มได้เลย</p>
   </div>

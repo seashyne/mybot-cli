@@ -28,6 +28,7 @@ mybot คือ AI coding agent สำหรับ terminal ที่เขี�
 - **Teams**: กระดานงานร่วม, inbox และ teammate ที่ทำงานเบื้องหลังแล้วส่งรายงานกลับ
 - **Memory**: บันทึกระยะยาวแยกตามโปรเจกต์ ใส่ index ใน system prompt อัตโนมัติ
 - **Syntax highlighting**: ไฮไลต์โค้ดใน TUI
+- **Version และ self-update**: `mybot version` และ `mybot update` ตรวจ checksum ก่อนติดตั้ง
 - **Headless**: `mybot exec` พร้อม output แบบ `text`, `json`, `stream-json`
 
 ---
@@ -187,6 +188,35 @@ docker run --rm --platform linux/arm64 \
 
 รายละเอียดเพิ่มเติมอยู่ใน [install.md](install.md)
 
+### 3.7 อัปเดตตัวเอง
+
+ตรวจสอบและอัปเดต binary ที่ติดตั้งอยู่:
+
+```bash
+mybot version            # เวอร์ชัน, commit, target, path
+mybot update --check     # ดูว่ามี release ใหม่ไหม
+mybot update             # ดาวน์โหลดและติดตั้งทับ binary เดิม
+mybot update --tag v0.2.0
+mybot update --force     # ติดตั้งซ้ำแม้เวอร์ชันเดียวกัน
+```
+
+`mybot update` จะ:
+
+1. ถาม GitHub Releases ล่าสุด (หรือ tag ที่ระบุ)
+2. ดาวน์โหลด asset `mybot-<target>` และ `sha256sums.txt`
+3. ตรวจ sha256 และปฏิเสธถ้าไม่มี checksum
+4. รัน binary ใหม่ด้วย `--version` เพื่อยืนยันว่าใช้งานได้
+5. rename ทับ binary เดิมแบบ atomic
+
+ข้อควรรู้:
+
+- ต้องมี release ที่ publish แล้ว; การมีแค่ tag ไม่มี asset ให้ดาวน์โหลด
+- ถ้าติดตั้งผ่าน npm ให้ใช้ `npm update -g mybot-cli`; `mybot update` จะปฏิเสธ
+  เว้นแต่ใส่ `--force`
+- ถ้า binary อยู่ใน `/usr/local/bin` ต้องรันด้วยสิทธิ์ที่เขียนโฟลเดอร์นั้นได้
+- ตั้ง `MYBOT_GITHUB_TOKEN` เพื่อหลีกเลี่ยง rate limit ของ GitHub API
+- รองรับ Linux x86_64/aarch64 และ macOS x86_64/arm64
+
 ---
 
 ## 4. เริ่มต้นใช้งาน
@@ -259,6 +289,8 @@ mybot -m openai/gpt-4o-mini
 mybot                  # เปิดหน้าจอสนทนา
 mybot "explain this repo"   # เปิดพร้อม prompt แรก
 mybot -c               # ต่อ session ล่าสุดในโฟลเดอร์นี้
+mybot version          # ดูเวอร์ชันและ build info
+mybot update --check   # เช็กว่ามี release ใหม่ไหม
 ```
 
 ### 4.5 เปลี่ยน model ระหว่างใช้งาน
@@ -399,6 +431,7 @@ mybot provider remove local
 | `/model` | แสดง provider/model ปัจจุบัน |
 | `/sessions` | แสดง session ล่าสุด 10 รายการ |
 | `/status` | แสดง provider, model, permission, session, tokens |
+| `/version` | แสดงเวอร์ชัน, commit, target และ path ของ binary |
 | `/compact` | สรุปบทสนทนาและแทน history ด้วย summary |
 | `/skills` | แสดง skills และ plugin commands |
 | `/skill <name>` | โหลด skill แล้วเริ่ม turn ทันที |

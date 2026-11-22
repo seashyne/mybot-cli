@@ -16,7 +16,7 @@ impl App {
             "/quit" | "/exit" => self.quit = true,
             "/help" => {
                 self.transcript.push(Entry::Info(
-                    "commands: /help /new /model /skills /skill /agents /sessions /status /compact /memory /remember /mcp /team /init /quit\n\
+                    "commands: /help /new /model /skills /skill /agents /sessions /status /version /compact /memory /remember /mcp /team /init /quit\n\
                      plugin commands: any /<name> listed by /skills\n\
                      keys: Enter send · Shift+Enter newline · Esc cancel/clear · Ctrl+C cancel/exit · Ctrl+D exit · PgUp/PgDn scroll"
                         .into(),
@@ -74,7 +74,8 @@ impl App {
             },
             "/status" => {
                 self.transcript.push(Entry::Info(format!(
-                    "provider: {}\nmodel: {}\npermission: {}\nsession: {}\ntokens: ↑{} ↓{}",
+                    "version: {}\nprovider: {}\nmodel: {}\npermission: {}\nsession: {}\ntokens: ↑{} ↓{}",
+                    crate::version::SHORT,
                     self.status.provider,
                     self.status.model,
                     self.status.permission.label(),
@@ -83,6 +84,9 @@ impl App {
                     self.status.output_tokens
                 )));
             }
+            "/version" => self
+                .transcript
+                .push(Entry::Info(crate::version::long())),
             "/skills" => {
                 let mut text = String::new();
                 if ctx.skills.is_empty() {

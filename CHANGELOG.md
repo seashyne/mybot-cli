@@ -8,11 +8,20 @@ and this project adheres to
 
 ## [Unreleased]
 
-Everything below landed in commit `27fd8d8` (2026-11-22) and is not part of a
-tagged release yet.
+Unreleased work on top of `v0.1.0`.
 
 ### Added
 
+- **Version reporting** — `mybot --version` now includes the git commit, and
+  `mybot version [--json]` prints the target triple, build profile, binary
+  path, and config directory. The TUI welcome screen and `/status` show the
+  version, and `/version` prints the full report.
+- **Self-update** — `mybot update` resolves the latest GitHub release (or
+  `--tag <tag>`), downloads the `mybot-<target>` asset and `sha256sums.txt`,
+  verifies the checksum, probes the new binary with `--version`, and replaces
+  the current executable atomically. `--check` only reports whether an update
+  exists; `--force` reinstalls the same version. npm-managed binaries are
+  refused unless forced, and insecure download URLs are rejected.
 - **MCP servers** — connect to Model Context Protocol servers over stdio or
   streamable HTTP. Configuration is merged from `~/.mybot/mcp.toml` and
   `<project>/.mybot/mcp.toml` (project entries win), and every remote tool is
@@ -42,6 +51,8 @@ tagged release yet.
 
 ### Changed
 
+- `build.rs` records the git commit, commit date, and target triple at build
+  time so version output identifies the exact binary.
 - The `Tool` trait now returns dynamic `&str` names and descriptions so MCP
   tools can be registered at runtime.
 - The TUI and headless runner now share the same MCP, sub-agent, and memory

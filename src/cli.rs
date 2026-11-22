@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Debug, Parser)]
 #[command(
     name = "mybot",
-    version,
+    version = crate::version::SHORT,
     about = "mybot cli - a terminal AI coding agent",
     disable_help_subcommand = true
 )]
@@ -87,6 +87,14 @@ pub enum Command {
         #[command(subcommand)]
         command: McpCommand,
     },
+    /// Print version, commit, target, and paths
+    Version {
+        /// Output JSON for scripts
+        #[arg(long)]
+        json: bool,
+    },
+    /// Update mybot to a newer release
+    Update(UpdateArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -153,8 +161,22 @@ pub enum PluginCommand {
 }
 
 #[derive(Debug, Args)]
-pub struct ExecArgs {
-    /// Prompt text; use --input - to read from stdin
+pub struct UpdateArgs {
+    /// Only report whether a newer release exists
+    #[arg(long)]
+    pub check: bool,
+
+    /// Reinstall the latest release even when the version is unchanged
+    #[arg(long)]
+    pub force: bool,
+
+    /// Install a specific release tag, for example v0.2.0
+    #[arg(long)]
+    pub tag: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ExecArgs {    /// Prompt text; use --input - to read from stdin
     pub prompt: Option<String>,
 
     /// Prompt source: "-" reads stdin

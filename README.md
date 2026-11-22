@@ -42,6 +42,8 @@ mybot exec "explain this repo" --output-format text
   chooses a model; `/model` switches at runtime.
 - **Headless mode**: `text`, `json`, and `stream-json` output with stable exit
   codes for scripts and CI.
+- **Version and self-update**: `mybot version` reports the build identity and
+  `mybot update` installs the latest release with checksum verification.
 
 ## Platforms
 
@@ -86,6 +88,44 @@ The TUI is a default feature. For a headless-only build:
 ```bash
 cargo build --release --no-default-features
 ```
+
+## Version and updates
+
+`mybot --version` prints the package version and the git commit the binary was
+built from:
+
+```bash
+$ mybot --version
+mybot 0.2.0 (27fd8d8)
+```
+
+`mybot version` adds the target triple, build profile, binary path, and config
+directory; `--json` makes it machine-readable.
+
+`mybot update` replaces the running binary with the newest GitHub release:
+
+```bash
+mybot update --check          # only report whether a newer release exists
+mybot update                  # download, verify, and install it
+mybot update --tag v0.2.0     # install a specific release
+mybot update --force          # reinstall even when the version is unchanged
+```
+
+The updater resolves the release through the GitHub API, downloads the
+`mybot-<target>` asset plus `sha256sums.txt`, and refuses to install without a
+matching checksum. It probes the downloaded binary with `--version`, then
+renames it over the current executable; the rename is atomic on Unix, so a
+running session keeps working and picks up the new binary next start.
+
+Notes:
+
+- A published release is required; a git tag alone has no downloadable assets.
+- npm installs are managed by npm — run `npm update -g mybot-cli` instead
+  (`--force` overrides the refusal).
+- If the binary lives in a root-owned directory, run the update with the
+  permissions needed to write there.
+- Set `MYBOT_GITHUB_TOKEN` to avoid GitHub API rate limits.
+- Supported targets: Linux x86_64/aarch64 and macOS x86_64/arm64.
 
 ## Quick start
 
@@ -216,6 +256,8 @@ mybot exec - < prompt.txt      # read the prompt from stdin
 mybot -c                       # continue the newest session in this directory
 mybot --session <id>           # resume a specific session
 mybot init [dir]               # create AGENTS.md
+mybot version [--json]         # version, commit, target, and paths
+mybot update [--check]         # install the latest release in place
 ```
 
 Useful flags: `-m/--model provider/model`, `--permission ask|auto|full`,
@@ -240,9 +282,9 @@ Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
 | `PgUp` / `PgDn` | scroll the transcript |
 | `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
 
-Slash commands: `/help`, `/new`, `/model`, `/sessions`, `/status`, `/init`,
-`/compact`, `/skills`, `/skill`, `/agents`, `/memory`, `/remember`, `/mcp`,
-`/team`, `/quit`.
+Slash commands: `/help`, `/new`, `/model`, `/sessions`, `/status`, `/version`,
+`/init`, `/compact`, `/skills`, `/skill`, `/agents`, `/memory`, `/remember`,
+`/mcp`, `/team`, `/quit`.
 
 ### Compacting a session
 
@@ -395,6 +437,8 @@ src/mcp/              MCP config, stdio/HTTP transports, tool bridge
 src/memory.rs         project memory store and prompt index
 src/subagents/        agent definitions and the `agent` tool
 src/team/             task board, inboxes, background teammates
+src/version.rs        build identity from Cargo and git
+src/update/           release lookup, checksum verification, self-replace
 src/permissions/      modes, rules, bash classifier, path checks
 src/session/          JSONL session ledger
 src/prompt/           system prompt assembly and project context

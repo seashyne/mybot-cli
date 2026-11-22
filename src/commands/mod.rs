@@ -14,6 +14,8 @@ mod provider;
 mod skill;
 #[cfg(feature = "tui")]
 mod tui;
+mod update;
+mod version;
 
 pub async fn dispatch(cli: Cli) -> Result<()> {
     match &cli.command {
@@ -24,6 +26,8 @@ pub async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Plugin { command }) => plugin::plugin_command(&cli, command),
         Some(Command::Memory { command }) => memory::memory_command(&cli, command),
         Some(Command::Mcp { command }) => mcp::mcp_command(&cli, command).await,
+        Some(Command::Version { json }) => version::version_command(*json),
+        Some(Command::Update(args)) => update::update_command(args).await,
         None => tui_command(cli).await,
     }
 }

@@ -17,6 +17,8 @@ pub mod skills;
 pub mod subagents;
 pub mod team;
 pub mod tools;
+pub mod update;
+pub mod version;
 
 #[cfg(feature = "tui")]
 pub mod tui;
