@@ -18,10 +18,16 @@ mybot คือ AI coding agent สำหรับ terminal ที่เขี�
 - **รองรับ 2 wire protocol**: Anthropic Messages API และ OpenAI-compatible Chat
   Completions (streaming SSE ทั้งคู่) ใช้ได้กับ Anthropic, OpenAI, MiniMax,
   DeepSeek, OpenRouter, Ollama, LM Studio และ endpoint ที่เข้ากันได้
-- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`
+- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`, `skill`,
+  `memory`, `agent` และ tool จาก MCP server (`mcp__<server>__<tool>`)
 - **Permissions**: โหมด `ask`, `auto`, `full` พร้อมกฎ allow/deny ที่บันทึกไว้
 - **Sessions**: เก็บเป็น JSONL ใน `~/.mybot/sessions` ต่อด้วย `-c` หรือ `--session`
 - **Context compaction**: `/compact` สรุปบทสนทนาแล้วแทน history ด้วย summary
+- **MCP servers**: เชื่อมได้ทั้ง stdio และ streamable HTTP
+- **Sub-agents**: agent definition เป็น markdown พร้อม tool subset ของตัวเอง
+- **Teams**: กระดานงานร่วม, inbox และ teammate ที่ทำงานเบื้องหลังแล้วส่งรายงานกลับ
+- **Memory**: บันทึกระยะยาวแยกตามโปรเจกต์ ใส่ index ใน system prompt อัตโนมัติ
+- **Syntax highlighting**: ไฮไลต์โค้ดใน TUI
 - **Headless**: `mybot exec` พร้อม output แบบ `text`, `json`, `stream-json`
 
 ---
@@ -394,6 +400,13 @@ mybot provider remove local
 | `/sessions` | แสดง session ล่าสุด 10 รายการ |
 | `/status` | แสดง provider, model, permission, session, tokens |
 | `/compact` | สรุปบทสนทนาและแทน history ด้วย summary |
+| `/skills` | แสดง skills และ plugin commands |
+| `/skill <name>` | โหลด skill แล้วเริ่ม turn ทันที |
+| `/agents` | แสดง sub-agent definitions |
+| `/memory` | แสดงรายการบันทึก; `/memory show <name>`, `/memory delete <name>` |
+| `/remember <text>` | บันทึกโน้ตโปรเจกต์อย่างเร็ว |
+| `/mcp` | แสดง MCP servers และ tools ที่เชื่อมได้ |
+| `/team` | แสดงกระดานงานและสมาชิกในทีม |
 | `/init` | สร้าง `AGENTS.md` ในโฟลเดอร์ปัจจุบัน |
 | `/quit` หรือ `/exit` | ออก |
 
@@ -438,6 +451,13 @@ mybot provider remove local
 | `grep` | ค้นหาเนื้อหาไฟล์ | 100 matches (สูงสุด 1,000), 16 KB output |
 | `glob` | หาไฟล์ตาม pattern | 200 files (สูงสุด 2,000) |
 | `todowrite` | จัดการ todo list | แสดงใน TUI |
+| `skill` | โหลด skill ตามชื่อ | ตามเนื้อหาใน SKILL.md |
+| `memory` | อ่าน/เขียนบันทึกโปรเจกต์ | list/read/write/delete |
+| `agent` | มอบงานให้ sub-agent | สูงสุด 24 model turns |
+| `mcp__*` | tool จาก MCP server | ตามที่ server กำหนด |
+| `task_create` / `task_list` / `task_update` | กระดานงานของทีม | ใช้ร่วมกับ teammate |
+| `spawn_teammate` | เปิด teammate ทำงานเบื้องหลัง | สูงสุด 32 model turns |
+| `send_message` / `check_messages` | กล่องข้อความในทีม | `wait_secs` 0-300 |
 
 - `read` ให้เลขบรรทัดและตัดบรรทัดที่ยาวเกิน 2,000 ตัวอักษร
 - `edit` ปฏิเสธถ้า match หลายที่ เพื่อไม่แก้ผิดตำแหน่ง
@@ -446,7 +466,117 @@ mybot provider remove local
 
 ---
 
-## 9. Skills และ Plugins
+## 9. Memory (ความจำโปรเจกต์)
+
+mybot เก็บบันทึกระยะยาวแยกตามโปรเจกต์ไว้ที่
+`~/.mybot/memory/<project>-<hash>/` เพื่อให้ session ใหม่จำ decisions และ
+ข้อจำกัดของโปรเจกต์ได้โดยไม่ต้องเล่าใหม่
+
+- หนึ่งบันทึก = หนึ่งไฟล์ `.md` พร้อม frontmatter: `name`, `title`,
+  `description`, `type`, `updated`
+- `type` เป็นหนึ่งใน `user`, `feedback`, `project`, `reference`
+- `MEMORY.md` คือ index ที่ถูกใส่ใน system prompt อัตโนมัติ (ไม่เกิน 8 KB)
+- โมเดลอ่าน/เขียนผ่าน tool `memory` (action: `list`, `read`, `write`, `delete`)
+- ใน TUI ใช้ `/memory` ดูรายการ, `/memory show <name>`, `/memory delete <name>`
+  และ `/remember <ข้อความ>` สำหรับบันทึกเร็ว
+
+ข้อควรระวัง: อย่าเก็บ API key, token, รหัสผ่าน หรือข้อมูลส่วนตัวลงใน memory
+เพราะเนื้อหาจะถูกส่งให้โมเดลทุกครั้งที่เริ่ม session
+
+---
+
+## 10. MCP servers
+
+mybot เชื่อมต่อ MCP (Model Context Protocol) ได้สองแบบ:
+
+- **stdio**: spawn process แล้วคุย JSON-RPC ทาง stdin/stdout
+- **streamable HTTP**: POST ไปที่ URL พร้อม session header
+
+ตำแหน่ง config (โหลดทั้งสองที่; ชื่อซ้ำให้ project ชนะ):
+
+```
+~/.mybot/mcp.toml          # ใช้ทุกโปรเจกต์
+<project>/.mybot/mcp.toml  # เฉพาะโปรเจกต์นี้
+```
+
+```toml
+[servers.files]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+env = { DEBUG = "0" }
+timeout_secs = 60
+
+[servers.docs]
+url = "https://mcp.example.com/mcp"
+headers = { Authorization = "Bearer ..." }
+```
+
+- ตั้ง `command` หรือ `url` อย่างใดอย่างหนึ่งเท่านั้น
+- tool ที่ได้จะชื่อ `mcp__<server>__<tool>` และใช้กฎ permission ได้เหมือน tool ปกติ
+- `mybot mcp list` แสดง config และ tool ที่เชื่อมได้จริง
+- `mybot mcp test <name>` ทดสอบ server เดียว
+- `/mcp` ใน TUI แสดงสถานะ
+- server ที่เริ่มไม่สำเร็จจะแสดง warning และข้ามไป ไม่ทำให้ session ล้ม
+
+---
+
+## 11. Sub-agents และทีม
+
+### 11.1 Sub-agent
+
+Sub-agent คือ agent ย่อยที่มี context แยกและ tool subset ของตัวเอง เหมาะกับงาน
+สำรวจหรือรีวิวแคบ ๆ ที่ไม่ควรกิน context หลัก
+
+```
+~/.mybot/agents/<name>.md          # ใช้ทุกโปรเจกต์
+<project>/.mybot/agents/<name>.md  # เฉพาะโปรเจกต์ (ชนะถ้าชื่อซ้ำ)
+```
+
+```markdown
+---
+name: reviewer
+description: Review a diff for correctness
+tools: read, grep, glob
+---
+You are a careful reviewer. Report findings as path:line.
+```
+
+- โมเดลเรียกผ่าน tool `agent` พร้อม `prompt` และ `subagent_type` (ถ้ามี)
+- sub-agent ทำงานสูงสุด 24 model turns และตอบกลับเป็นรายงานพร้อม tool trace
+- sub-agent ถามผู้ใช้ไม่ได้; ถ้าติดปัญหาจะหยุดและอธิบาย
+- `/agents` แสดง definition ที่โหลดไว้
+
+### 11.2 ทีม (teammates)
+
+เมื่องานแบ่งเป็นส่วนอิสระได้ ตัวหลัก (lead) เปิด teammate ทำงานเบื้องหลังได้
+โดยใช้กระดานงานและ inbox ร่วมกัน
+
+| Tool | หน้าที่ |
+| --- | --- |
+| `task_create` | เพิ่มงานลงกระดาน |
+| `task_list` | ดูกระดานทั้งหมด |
+| `task_update` | เปลี่ยน status (`pending`, `in_progress`, `completed`) หรือ owner |
+| `spawn_teammate` | เปิด teammate พร้อมชื่อ, role, prompt และ tool subset |
+| `send_message` | ส่งข้อความถึง `lead` หรือ teammate คนอื่น |
+| `check_messages` | อ่าน inbox; ใส่ `wait_secs` เพื่อรอ teammate ทุกคนเสร็จก่อน |
+
+ลำดับการทำงานโดยทั่วไป:
+
+1. lead สร้าง task แล้ว assign owner
+2. lead เรียก `spawn_teammate` หนึ่งคนต่องาน
+3. teammate อัปเดตกระดานเป็น `in_progress` → ทำงาน → `completed`
+4. teammate ส่งรายงานเข้า inbox ของ lead
+5. lead เรียก `check_messages` (อาจใส่ `wait_secs`) แล้วสรุปให้ผู้ใช้
+
+ระหว่างที่ทีมทำงาน TUI จะแสดงแผง `team` เหนือช่องพิมพ์ พร้อมสถานะและ tool
+ล่าสุดของแต่ละคน และ `/team` พิมพ์กระดานเต็ม
+
+ข้อควรระวัง: teammate แต่ละคนคือบทสนทนาโมเดลแยก จึงมีค่าใช้จ่ายเพิ่ม ควรใช้
+เมื่องานแยกส่วนได้จริงและมีประโยชน์จากการทำพร้อมกัน
+
+---
+
+## 12. Skills และ Plugins
 
 ### 9.1 Skill คืออะไร
 
@@ -553,7 +683,7 @@ mybot plugin command review "focus on src/"  # ดู prompt ที่จะส�
 mybot plugin add examples/plugins/code-review --project
 ```
 
-## 10. Permissions
+## 13. Permissions
 
 | โหมด | พฤติกรรม |
 | --- | --- |
@@ -580,7 +710,7 @@ behavior = "allow"    # allow | deny | ask
 
 ---
 
-## 11. Headless mode
+## 14. Headless mode
 
 ```bash
 mybot exec "<prompt>"
@@ -632,7 +762,7 @@ mybot exec "refactor this" --output-format stream-json \
 
 ---
 
-## 12. ประสิทธิภาพ
+## 15. ประสิทธิภาพ
 
 สรุปจาก [performance.md](performance.md) บน Intel i5-13400F:
 
@@ -646,7 +776,7 @@ mybot exec "refactor this" --output-format stream-json \
 
 ---
 
-## 13. แก้ปัญหา
+## 16. แก้ปัญหา
 
 **exit code 3 — missing API key**
 ตั้ง environment variable ตามชื่อที่ error บอก หรือเพิ่ม `api_key` ใน config
@@ -677,6 +807,6 @@ tool มี timeout 120s (สูงสุด 300s) และ `Esc` ยกเล�
 
 ---
 
-## 14. License
+## 17. License
 
 MIT — ดู [LICENSE](../LICENSE)

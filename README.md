@@ -14,7 +14,8 @@ mybot exec "explain this repo" --output-format text
 - **Two wire protocols**: Anthropic Messages API and OpenAI-compatible Chat
   Completions, both streaming SSE. Works with Anthropic, OpenAI, MiniMax,
   DeepSeek, OpenRouter, Ollama, and any compatible endpoint.
-- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`, `skill`.
+- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`, `skill`,
+  `memory`, `agent`, plus `mcp__<server>__<tool>` for MCP servers.
   Reads are capped and line-numbered, edits are atomic and reject ambiguous
   matches, bash has timeouts and process-group kills.
 - **Permissions**: `ask`, `auto`, and `full` modes with persisted allow/deny
@@ -28,12 +29,19 @@ mybot exec "explain this repo" --output-format text
   plus `~/.mybot/AGENTS.md`, capped at 32 KB.
 - **Skills and plugins**: markdown instruction packs loaded on demand, plus
   plugins that bundle skills and slash commands.
+- **MCP servers**: stdio and streamable HTTP transports, merged user and project
+  config, with tools exposed as `mcp__<server>__<tool>`.
+- **Sub-agents**: markdown agent definitions with their own context and an
+  optional tool subset, invoked through the `agent` tool.
+- **Teams**: a shared task board, inbox messaging, and background teammates that
+  report back to the lead; the TUI shows live member status.
+- **Project memory**: durable notes in `~/.mybot/memory`, indexed into the
+  system prompt and managed with the `memory` tool or `/remember`.
+- **Syntax highlighting** for fenced code blocks in the TUI.
 - **First-run setup**: a guided screen picks a provider, stores the key, and
   chooses a model; `/model` switches at runtime.
 - **Headless mode**: `text`, `json`, and `stream-json` output with stable exit
   codes for scripts and CI.
-
-Not implemented yet: MCP servers, sub-agents, syntax highlighting.
 
 ## Platforms
 
@@ -233,7 +241,8 @@ Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
 | `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
 
 Slash commands: `/help`, `/new`, `/model`, `/sessions`, `/status`, `/init`,
-`/compact`, `/quit`.
+`/compact`, `/skills`, `/skill`, `/agents`, `/memory`, `/remember`, `/mcp`,
+`/team`, `/quit`.
 
 ### Compacting a session
 
@@ -293,6 +302,72 @@ mybot plugin command review "focus on src/"
 The bundled example in `examples/plugins/code-review/` adds a `/review`
 command and a `security-review` skill.
 
+## MCP servers
+
+MCP servers extend the tool set over the Model Context Protocol. Configure them
+in `~/.mybot/mcp.toml` or `<project>/.mybot/mcp.toml` (project entries win):
+
+```toml
+[servers.files]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+
+[servers.docs]
+url = "https://mcp.example.com/mcp"
+headers = { Authorization = "Bearer ..." }
+timeout_secs = 60
+```
+
+`command` selects a stdio server, `url` selects streamable HTTP. Every tool is
+registered as `mcp__<server>__<tool>`, so it can be allowed or denied with the
+usual permission rules. `mybot mcp list` shows the config and live tools;
+`mybot mcp test <name>` connects to one server. A server that fails to start is
+reported as a warning and does not abort the session.
+
+## Memory
+
+Project notes live in `~/.mybot/memory/<project>-<hash>/` as markdown files with
+frontmatter (`type` is one of `user`, `feedback`, `project`, `reference`). The
+generated `MEMORY.md` index is injected into the system prompt (capped at 8 KB),
+so the model knows what exists before it reads an entry with the `memory` tool.
+
+```
+/memory                 # list entries
+/memory show <name>     # print one entry
+/memory delete <name>   # remove one entry
+/remember <text>        # save a quick project note
+```
+
+## Sub-agents and teams
+
+Define reusable sub-agents as markdown files in `~/.mybot/agents/<name>.md` or
+`<project>/.mybot/agents/<name>.md`:
+
+```markdown
+---
+name: reviewer
+description: Review a diff for correctness
+tools: read, grep, glob
+---
+You are a careful reviewer. Report findings as path:line.
+```
+
+The model calls the `agent` tool with a prompt and an optional `subagent_type`;
+the sub-agent has its own context, a 24-step cap, and only the listed tools.
+`/agents` lists what is installed.
+
+For larger jobs the lead can run a team. Teammates work in the background with
+the same provider and permission engine, share a task board, and send reports to
+the lead's inbox:
+
+- `task_create`, `task_list`, `task_update` — the shared board
+- `spawn_teammate` — start a teammate with a name, role, prompt, and optional tool subset
+- `send_message`, `check_messages` — inboxes (`check_messages` can wait for teammates to finish)
+
+The TUI shows running teammates above the composer, and `/team` prints the full
+board. Each teammate is a separate model conversation, so it costs tokens; keep
+teams for work that actually splits into independent parts.
+
 ## Permissions
 
 | Mode | Behaviour |
@@ -315,7 +390,11 @@ src/config/           config.toml, provider resolution, data paths
 src/protocol/         canonical Message/Block/ToolResult model
 src/providers/        SSE decoder, Anthropic, OpenAI, mock provider
 src/agent/            turn loop, delta assembler, events
-src/tools/            read, write, edit, bash, grep, glob, todowrite
+src/tools/            read, write, edit, bash, grep, glob, todowrite, memory
+src/mcp/              MCP config, stdio/HTTP transports, tool bridge
+src/memory.rs         project memory store and prompt index
+src/subagents/        agent definitions and the `agent` tool
+src/team/             task board, inboxes, background teammates
 src/permissions/      modes, rules, bash classifier, path checks
 src/session/          JSONL session ledger
 src/prompt/           system prompt assembly and project context
@@ -325,7 +404,11 @@ src/tui/              ratatui UI (feature "tui")
 
 The agent loop is shared by the TUI and headless mode: both consume the same
 `AgentEvent` stream, so tool execution and permission handling have exactly one
-implementation.
+implementation. Sub-agents and teammates reuse that loop instead of duplicating
+it.
+
+Every source file in `src/`, `tests/`, and `benches/` is limited to 400 lines;
+`tests/structure.rs` enforces the rule.
 
 ## Tests
 

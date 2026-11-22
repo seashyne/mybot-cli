@@ -3,6 +3,7 @@ pub mod edit;
 pub mod edit_match;
 pub mod glob;
 pub mod grep;
+pub mod memory;
 pub mod read;
 pub mod skill;
 pub mod todo;
@@ -67,8 +68,8 @@ pub struct ToolCtx {
 
 #[async_trait]
 pub trait Tool: Send + Sync {
-    fn name(&self) -> &'static str;
-    fn description(&self) -> &'static str;
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
     fn schema(&self) -> Value;
     fn execution_mode(&self) -> ExecutionMode {
         ExecutionMode::Sequential
@@ -124,6 +125,7 @@ impl ToolRegistry {
         registry.register(Arc::new(glob::GlobTool));
         registry.register(Arc::new(grep::GrepTool));
         registry.register(Arc::new(todo::TodoWriteTool));
+        registry.register(Arc::new(memory::MemoryTool::new()));
         registry
     }
 
@@ -136,6 +138,12 @@ impl ToolRegistry {
 
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
+    }
+
+    /// Keep only the named tools (used to build a sub-agent's tool subset).
+    pub fn retain(&mut self, names: &[String]) {
+        self.tools
+            .retain(|name, _| names.iter().any(|allowed| allowed == name));
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {

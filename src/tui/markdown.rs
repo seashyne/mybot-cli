@@ -9,23 +9,25 @@ use super::theme;
 /// half-written code fence simply renders as code until it closes.
 pub fn render(text: &str) -> Vec<Line<'static>> {
     let mut out = Vec::new();
-    let mut in_code = false;
+    let mut code_lang: Option<String> = None;
+    let mut code_lines: Vec<String> = Vec::new();
 
     for raw in text.split('\n') {
         let line = raw.trim_end();
         let trimmed = line.trim_start();
         let indent = line.len() - trimmed.len();
 
-        if trimmed.starts_with("```") {
-            in_code = !in_code;
+        if code_lang.is_some() {
+            if trimmed.starts_with("```") {
+                flush_code(&mut out, code_lang.take().unwrap_or_default(), &mut code_lines);
+            } else {
+                code_lines.push(line.to_string());
+            }
             continue;
         }
 
-        if in_code {
-            out.push(Line::from(Span::styled(
-                format!("  │ {line}"),
-                Style::default().fg(theme::CODE),
-            )));
+        if let Some(rest) = trimmed.strip_prefix("```") {
+            code_lang = Some(rest.trim().to_string());
             continue;
         }
 
@@ -126,7 +128,32 @@ pub fn render(text: &str) -> Vec<Line<'static>> {
         out.push(Line::from(inline(line)));
     }
 
+    if code_lang.is_some() {
+        flush_code(&mut out, code_lang.unwrap_or_default(), &mut code_lines);
+    }
+
     out
+}
+
+fn flush_code(out: &mut Vec<Line<'static>>, lang: String, lines: &mut Vec<String>) {
+    match super::highlight::highlight_block(&lang, lines) {
+        Some(block) => {
+            for spans in block {
+                let mut line = vec![Span::styled("  │ ", Style::default().fg(theme::DIM))];
+                line.extend(spans);
+                out.push(Line::from(line));
+            }
+        }
+        None => {
+            for line in lines.iter() {
+                out.push(Line::from(Span::styled(
+                    format!("  │ {line}"),
+                    Style::default().fg(theme::CODE),
+                )));
+            }
+        }
+    }
+    lines.clear();
 }
 
 fn ordered_item(line: &str) -> Option<(u32, &str)> {

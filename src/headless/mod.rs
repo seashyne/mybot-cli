@@ -9,7 +9,7 @@ use tokio_util::sync::CancellationToken;
 use crate::agent::{Agent, AgentEvent, AgentOptions, CompactOutcome};
 use crate::config::{Config, PermissionMode};
 use crate::error::{AppError, Result};
-use crate::permissions::{DenyPrompter, PermissionEngine};
+use crate::permissions::{DenyPrompter, PermissionEngine, Prompter};
 use crate::prompt::{self, PromptOptions};
 use crate::providers;
 use crate::session::Session;
@@ -42,26 +42,58 @@ pub async fn run(options: ExecOptions) -> Result<()> {
         Arc::from(providers::build(&resolved)?);
 
     let skills = Arc::new(crate::skills::SkillSet::discover(&cwd));
+    let memory = crate::memory::MemoryStore::load(&cwd);
+    let mcp = Arc::new(crate::mcp::McpManager::start(&cwd).await);
+    for warning in mcp.warnings() {
+        eprintln!("mybot: mcp: {warning}");
+    }
+    let agents = Arc::new(crate::subagents::AgentSet::discover(&cwd));
     let system = prompt::build(&PromptOptions {
         cwd: cwd.clone(),
         system_override: options.system_override.clone(),
         append: options.append_system.clone(),
         skills: skills.prompt_block(),
+        memory: memory.prompt_block(),
+        agents: agents.prompt_block(),
     });
+    let mut registry = ToolRegistry::with_skills(skills.clone());
+    for tool in mcp.tools() {
+        registry.register(tool);
+    }
 
     let session = open_session(&options, &cwd, &resolved.name, &resolved.model)?;
     let messages = session.messages.clone();
     let session = Arc::new(Mutex::new(session));
 
+    let permissions = Arc::new(PermissionEngine::new(
+        options.permission,
+        cwd.clone(),
+        config.permissions.rules.clone(),
+    ));
+    let prompter: Arc<dyn Prompter> = Arc::new(DenyPrompter);
+    let retry = providers::RetryPolicy::from_resolved(&resolved);
+
+    let runtime = Arc::new(crate::subagents::AgentRuntime {
+        provider: provider.clone(),
+        permissions: permissions.clone(),
+        prompter: prompter.clone(),
+        base_system: system.clone(),
+        cwd: cwd.clone(),
+        max_tokens: resolved.max_tokens,
+        temperature: resolved.temperature,
+        thinking_budget: resolved.thinking_budget,
+        retry,
+        skills: skills.clone(),
+        mcp: Some(mcp),
+        agents,
+    });
+    registry.register(Arc::new(crate::subagents::AgentTool::new(runtime)));
+
     let agent_options = AgentOptions {
         provider,
-        tools: Arc::new(ToolRegistry::with_skills(skills)),
-        permissions: Arc::new(PermissionEngine::new(
-            options.permission,
-            cwd.clone(),
-            config.permissions.rules.clone(),
-        )),
-        prompter: Arc::new(DenyPrompter),
+        tools: Arc::new(registry),
+        permissions,
+        prompter,
         system,
         cwd: cwd.clone(),
         max_tokens: resolved.max_tokens,
@@ -70,7 +102,7 @@ pub async fn run(options: ExecOptions) -> Result<()> {
         max_steps: options.max_steps,
         session: Some(session),
         messages,
-        retry: providers::RetryPolicy::from_resolved(&resolved),
+        retry,
     };
 
     let agent = Agent::new(agent_options);
@@ -302,6 +334,7 @@ fn event_to_json(event: &AgentEvent) -> Option<serde_json::Value> {
             json!({"type": "done", "stopReason": format!("{stop_reason:?}")})
         }
         AgentEvent::Todos(todos) => json!({"type": "todos", "todos": todos}),
+        AgentEvent::Team(snapshot) => json!({"type": "team", "team": snapshot}),
         AgentEvent::Error(message) => json!({"type": "error", "message": message}),
     };
     Some(value)

@@ -55,6 +55,18 @@ permalink: /
     <p>รวม skill และ slash command ไว้แจกจ่าย ติดตั้งด้วยคำสั่งเดียว</p>
   </div>
   <div class="feature">
+    <h3>MCP servers</h3>
+    <p>ต่อ tool จาก MCP ผ่าน stdio หรือ streamable HTTP ตั้งค่าแยกโปรเจกต์ได้</p>
+  </div>
+  <div class="feature">
+    <h3>Sub-agents และทีม</h3>
+    <p>agent ย่อย context แยก และ teammate ทำงานเบื้องหลังบนกระดานงานร่วมกับ inbox</p>
+  </div>
+  <div class="feature">
+    <h3>Memory</h3>
+    <p>บันทึก decisions ของโปรเจกต์ข้าม session พร้อม index ใน system prompt</p>
+  </div>
+  <div class="feature">
     <h3>Setup ครั้งแรก</h3>
     <p>หน้าจอเลือก provider → ใส่ key → เลือก model แล้วเริ่มได้เลย</p>
   </div>

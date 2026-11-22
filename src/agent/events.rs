@@ -1,4 +1,5 @@
 use crate::protocol::StopReason;
+use crate::team::TeamSnapshot;
 use crate::tools::TodoItem;
 
 /// Result of a successful compaction.
@@ -74,5 +75,7 @@ pub enum AgentEvent {
         stop_reason: StopReason,
     },
     Todos(Vec<TodoItem>),
+    /// The shared team board or a teammate status changed.
+    Team(TeamSnapshot),
     Error(String),
 }

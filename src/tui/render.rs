@@ -2,10 +2,15 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Wrap};
 
 use super::app::{App, Entry};
 use super::{markdown, theme, todo};
+use crate::team::MemberStatus;
+
+mod overlays;
+#[cfg(test)]
+mod tests;
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
@@ -18,6 +23,12 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     } else {
         (app.todos.len() as u16 + 2).min(8)
     };
+    let team_height = match &app.team {
+        Some(snapshot) if !snapshot.members.is_empty() => {
+            (snapshot.members.len().min(4) as u16) + 2
+        }
+        _ => 0,
+    };
     let composer_height = (app.composer.lines().len() as u16).clamp(1, 6) + 2;
 
     let chunks = Layout::default()
@@ -25,6 +36,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Min(3),
             Constraint::Length(todo_height),
+            Constraint::Length(team_height),
             Constraint::Length(composer_height),
             Constraint::Length(1),
         ])
@@ -34,14 +46,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     if todo_height > 0 {
         draw_todos(frame, app, chunks[1]);
     }
-    draw_composer(frame, app, chunks[2]);
-    draw_status(frame, app, chunks[3]);
+    if team_height > 0 {
+        draw_team(frame, app, chunks[2]);
+    }
+    draw_composer(frame, app, chunks[3]);
+    draw_status(frame, app, chunks[4]);
 
     if app.permission.is_some() {
-        draw_permission(frame, app, area);
+        overlays::draw_permission(frame, app, area);
     }
     if app.model_picker.is_some() {
-        draw_model_picker(frame, app, area);
+        overlays::draw_model_picker(frame, app, area);
     }
 }
 
@@ -300,343 +315,46 @@ fn draw_todos(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(todo::lines(&app.todos)), inner);
 }
 
-fn draw_permission(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(modal) = &app.permission else {
+fn draw_team(frame: &mut Frame, app: &App, area: Rect) {
+    let Some(snapshot) = &app.team else {
         return;
     };
-
-    let width = area.width.saturating_sub(8).clamp(20, 80);
-    let height = area.height.saturating_sub(4).clamp(6, 18);
-    let rect = centered(area, width, height);
-
-    frame.render_widget(Clear, rect);
+    let completed = snapshot
+        .tasks
+        .iter()
+        .filter(|task| task.status == "completed")
+        .count();
     let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(theme::TOOL))
-        .title(" permission required ");
-    let inner = block.inner(rect);
-    frame.render_widget(block, rect);
-
-    let mut lines = vec![
-        Line::from(Span::styled(
-            modal.request.summary.clone(),
-            Style::default()
-                .fg(theme::TOOL)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-    ];
-    for line in modal.request.detail.lines().take(8) {
-        lines.push(Line::from(Span::styled(
-            line.to_string(),
-            Style::default().fg(theme::ASSISTANT),
-        )));
-    }
-    lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled(
-        "a allow once · A always allow · d deny",
-        Style::default().fg(theme::DIM),
-    )));
-
-    frame.render_widget(
-        Paragraph::new(lines).wrap(Wrap { trim: false }),
-        inner,
-    );
-}
-
-fn draw_model_picker(frame: &mut Frame, app: &App, area: Rect) {
-    let Some(picker) = &app.model_picker else {
-        return;
-    };
-
-    let rows = picker.items.len() + 1; // + custom row
-    let width = area.width.saturating_sub(8).clamp(30, 76);
-    let height = (rows as u16 + 6).min(area.height.saturating_sub(2)).max(8);
-    let rect = centered(area, width, height);
-
-    frame.render_widget(Clear, rect);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(theme::ACCENT))
-        .title(Span::styled(
-            " switch model ",
-            Style::default()
-                .fg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
+        .borders(Borders::TOP)
+        .border_style(Style::default().fg(theme::BORDER))
+        .title(format!(
+            " team · {} running · tasks {completed}/{} ",
+            snapshot.running(),
+            snapshot.tasks.len()
         ));
-    let inner = block.inner(rect);
-    frame.render_widget(block, rect);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
 
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    for (index, item) in picker.items.iter().enumerate() {
-        let selected = index == picker.selected;
-        let current = item.provider == app.status.provider && item.model == app.status.model;
-        let marker = if selected { "▸ " } else { "  " };
-        let name_style = if selected {
-            Style::default()
-                .fg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD)
-        } else {
-            Style::default().fg(theme::ASSISTANT)
+    let mut lines = Vec::new();
+    for member in snapshot.members.iter().take(4) {
+        let (marker, color) = match member.status {
+            MemberStatus::Running => ("◐", theme::TOOL),
+            MemberStatus::Done => ("✓", theme::DIM),
+            MemberStatus::Failed => ("✗", theme::ERROR),
         };
-        let tag = if current {
-            (" current", theme::CODE)
-        } else if item.ready {
-            ("", theme::DIM)
-        } else {
-            (" needs key", theme::ERROR)
+        let detail = match (&member.activity, member.status) {
+            (Some(activity), MemberStatus::Running) => activity.clone(),
+            _ => member.status.label().to_string(),
         };
         lines.push(Line::from(vec![
-            Span::styled(marker, Style::default().fg(theme::ACCENT)),
-            Span::styled(format!("{:<12}", item.provider), name_style),
+            Span::styled(format!(" {marker} "), Style::default().fg(color)),
             Span::styled(
-                format!("{:<28}", item.model),
-                Style::default().fg(theme::ASSISTANT),
+                format!("{:<14}", member.name),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(tag.0, Style::default().fg(tag.1)),
+            Span::styled(format!("{:<12}", member.role), Style::default().fg(theme::DIM)),
+            Span::styled(detail, Style::default().fg(theme::DIM)),
         ]));
     }
-
-    let custom_selected = picker.selected >= picker.items.len();
-    let custom_marker = if custom_selected { "▸ " } else { "  " };
-    match &picker.custom {
-        Some(buffer) => {
-            lines.push(Line::from(vec![
-                Span::styled(custom_marker, Style::default().fg(theme::ACCENT)),
-                Span::styled(
-                    "custom      ",
-                    Style::default()
-                        .fg(theme::ACCENT)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled("› ", Style::default().fg(theme::ACCENT)),
-                Span::styled(buffer.clone(), Style::default().fg(theme::ASSISTANT)),
-                Span::styled("█", Style::default().fg(theme::ACCENT)),
-            ]));
-        }
-        None => {
-            lines.push(Line::from(vec![
-                Span::styled(custom_marker, Style::default().fg(theme::ACCENT)),
-                Span::styled(
-                    "custom      type any model name…",
-                    Style::default().fg(if custom_selected {
-                        theme::ACCENT
-                    } else {
-                        theme::DIM
-                    }),
-                ),
-            ]));
-        }
-    }
-
-    lines.push(Line::from(""));
-    if let Some(error) = &picker.error {
-        lines.push(Line::from(Span::styled(
-            error.clone(),
-            Style::default().fg(theme::ERROR),
-        )));
-    }
-    lines.push(Line::from(Span::styled(
-        if picker.custom.is_some() {
-            "Enter apply · Esc back"
-        } else {
-            "↑↓ move · Enter apply · Esc close"
-        },
-        Style::default().fg(theme::DIM),
-    )));
-
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
-}
-
-fn centered(area: Rect, width: u16, height: u16) -> Rect {    let x = area.x + area.width.saturating_sub(width) / 2;
-    let y = area.y + area.height.saturating_sub(height) / 2;
-    Rect {
-        x,
-        y,
-        width,
-        height,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::PermissionMode;
-    use crate::tui::app::Status;
-    use std::path::PathBuf;
-
-    fn app() -> App {
-        App::new(
-            Status {
-                provider: "mock".into(),
-                model: "mock-model".into(),
-                permission: PermissionMode::Auto,
-                session: "abc12345".into(),
-                input_tokens: 0,
-                output_tokens: 0,
-            },
-            PathBuf::from("/tmp"),
-            None,
-        )
-    }
-
-    fn flatten(lines: &[Line<'static>]) -> String {
-        lines
-            .iter()
-            .map(|line| {
-                line.spans
-                    .iter()
-                    .map(|span| span.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    #[test]
-    fn welcome_screen_mentions_help() {
-        let app = app();
-        let text = flatten(&transcript_lines(&app));
-        assert!(text.contains("mybot cli"));
-        assert!(text.contains("/help"));
-    }
-
-    #[test]
-    fn renders_user_assistant_and_tool_entries() {
-        let mut app = app();
-        app.transcript.push(Entry::User("hello".into()));
-        app.transcript
-            .push(Entry::Assistant("**hi** there".into()));
-        app.transcript.push(Entry::Tool {
-            id: "1".into(),
-            name: "read".into(),
-            summary: "read a.txt".into(),
-            content: "ok".into(),
-            is_error: false,
-            running: false,
-            expanded: false,
-        });
-
-        let text = flatten(&transcript_lines(&app));
-        assert!(text.contains("› hello"));
-        assert!(text.contains("hi there"));
-        assert!(text.contains("read a.txt"));
-    }
-
-    #[test]
-    fn wrap_splits_long_lines() {
-        let lines = vec![Line::from(Span::raw("abcdefghij"))];
-        let wrapped = wrap_lines(lines, 4);
-        assert_eq!(wrapped.len(), 3);
-        assert_eq!(flatten(&wrapped), "abcd\nefgh\nij");
-    }
-
-    #[test]
-    fn draws_assistant_text_to_terminal() {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
-
-        let mut app = app();
-        app.transcript
-            .push(Entry::Assistant("Hello from fake provider".into()));
-
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let text: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<Vec<_>>()
-            .join("");
-        assert!(
-            text.contains("Hello from fake provider"),
-            "buffer did not contain the answer: {text:?}"
-        );
-    }
-
-    #[test]
-    fn draws_permission_modal() {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
-
-        let mut app = app();
-        let (tx, _rx) = tokio::sync::oneshot::channel();
-        app.set_permission(
-            crate::permissions::PermissionRequest {
-                tool: "bash".into(),
-                summary: "run a command".into(),
-                detail: "rm -rf build".into(),
-                always_rule: None,
-            },
-            tx,
-        );
-
-        let backend = TestBackend::new(90, 30);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let text: String = buffer
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect::<Vec<_>>()
-            .join("");
-        assert!(text.contains("permission required"));
-        assert!(text.contains("rm -rf build"));
-    }
-
-    #[test]
-    fn error_entry_is_marked() {
-        let mut app = app();
-        app.transcript.push(Entry::Error("boom".into()));
-        let text = flatten(&transcript_lines(&app));
-        assert!(text.contains("! boom"));
-    }
-
-    #[test]
-    fn draws_the_model_picker_overlay() {
-        use ratatui::Terminal;
-        use ratatui::backend::TestBackend;
-
-        let mut app = app();
-        app.model_picker = Some(crate::tui::app::ModelPicker {
-            items: vec![
-                crate::tui::app::ModelItem {
-                    provider: "anthropic".into(),
-                    model: "claude-sonnet-4-5".into(),
-                    ready: true,
-                },
-                crate::tui::app::ModelItem {
-                    provider: "openai".into(),
-                    model: "gpt-4o-mini".into(),
-                    ready: false,
-                },
-            ],
-            selected: 1,
-            custom: None,
-            error: None,
-        });
-
-        let backend = TestBackend::new(90, 30);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
-
-        let text: String = terminal
-            .backend()
-            .buffer()
-            .content()
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
-        assert!(text.contains("switch model"));
-        assert!(text.contains("claude-sonnet-4-5"));
-        assert!(text.contains("needs key"));
-        assert!(text.contains("custom"));
-    }
+    frame.render_widget(Paragraph::new(lines), inner);
 }

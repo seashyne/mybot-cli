@@ -1,5 +1,6 @@
 mod app;
 mod composer;
+mod highlight;
 mod markdown;
 mod permission;
 mod render;
@@ -99,12 +100,21 @@ pub async fn run(options: TuiOptions) -> Result<()> {
 
     let skills = Arc::new(crate::skills::SkillSet::discover(&cwd));
     let plugins = Arc::new(crate::plugins::PluginSet::discover(&cwd));
+    let memory = crate::memory::MemoryStore::load(&cwd);
+    let mcp = Arc::new(crate::mcp::McpManager::start(&cwd).await);
+    let agents = Arc::new(crate::subagents::AgentSet::discover(&cwd));
     let system = prompt::build(&PromptOptions {
         cwd: cwd.clone(),
         system_override: options.system_override.clone(),
         append: options.append_system.clone(),
         skills: skills.prompt_block(),
+        memory: memory.prompt_block(),
+        agents: agents.prompt_block(),
     });
+    let mut registry = ToolRegistry::with_skills(skills.clone());
+    for tool in mcp.tools() {
+        registry.register(tool);
+    }
 
     let session = if let Some(id) = &options.session_id {
         Session::open(id)?
@@ -123,15 +133,37 @@ pub async fn run(options: TuiOptions) -> Result<()> {
 
     let (perm_tx, mut perm_rx) = mpsc::unbounded_channel::<PermissionAsk>();
     let prompter = Arc::new(ChannelPrompter { tx: perm_tx });
+    let permissions = Arc::new(PermissionEngine::new(
+        permission,
+        cwd.clone(),
+        config.permissions.rules.clone(),
+    ));
+    let retry = providers::RetryPolicy::from_resolved(&resolved);
+
+    let runtime = Arc::new(crate::subagents::AgentRuntime {
+        provider: provider.clone(),
+        permissions: permissions.clone(),
+        prompter: prompter.clone(),
+        base_system: system.clone(),
+        cwd: cwd.clone(),
+        max_tokens: resolved.max_tokens,
+        temperature: resolved.temperature,
+        thinking_budget: resolved.thinking_budget,
+        retry,
+        skills: skills.clone(),
+        mcp: Some(mcp.clone()),
+        agents: agents.clone(),
+    });
+
+    let (tx, mut rx) = mpsc::channel::<AgentEvent>(512);
+    let team = Arc::new(crate::team::Team::new(runtime.clone(), tx.clone()));
+    registry.register(Arc::new(crate::subagents::AgentTool::new(runtime)));
+    crate::team::register_lead(&mut registry, team.clone());
 
     let agent = Arc::new(Mutex::new(Agent::new(AgentOptions {
         provider,
-        tools: Arc::new(ToolRegistry::with_skills(skills.clone())),
-        permissions: Arc::new(PermissionEngine::new(
-            permission,
-            cwd.clone(),
-            config.permissions.rules.clone(),
-        )),
+        tools: Arc::new(registry),
+        permissions,
         prompter,
         system,
         cwd: cwd.clone(),
@@ -141,10 +173,8 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         max_steps: None,
         session: Some(session),
         messages,
-        retry: providers::RetryPolicy::from_resolved(&resolved),
+        retry,
     })));
-
-    let (tx, mut rx) = mpsc::channel::<AgentEvent>(512);
 
     let status = Status {
         provider: resolved.name.clone(),
@@ -156,11 +186,17 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     };
 
     let mut app = App::new(status, cwd, options.initial_prompt);
+    for warning in mcp.warnings() {
+        app.transcript
+            .push(app::Entry::Info(format!("! MCP: {warning}")));
+    }
     let ctx = Ctx {
         agent: agent.clone(),
         tx: tx.clone(),
         skills,
         plugins,
+        mcp: mcp.clone(),
+        agents,
     };
 
     app.start_initial(&ctx);
@@ -188,6 +224,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     }
 
     // Let a running turn kill its child processes before the process exits.
+    team.cancel();
     if app.busy {
         app.cancel.cancel();
         tokio::time::sleep(Duration::from_millis(400)).await;

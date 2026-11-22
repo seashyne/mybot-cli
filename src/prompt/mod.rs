@@ -11,6 +11,10 @@ pub struct PromptOptions {
     pub append: Vec<String>,
     /// `<skills>` section listing what the `skill` tool can load.
     pub skills: Option<String>,
+    /// `<memory>` section indexing durable project notes.
+    pub memory: Option<String>,
+    /// `<subagents>` section listing agent definitions.
+    pub agents: Option<String>,
 }
 
 const BASE_PROMPT: &str = r#"You are mybot, a terminal coding agent working inside the user's project.
@@ -29,6 +33,21 @@ const BASE_PROMPT: &str = r#"You are mybot, a terminal coding agent working insi
 - `edit` replaces exact text; include enough context for a unique match.
 - `bash` runs shell commands in the project directory.
 - `grep` searches file contents, `glob` finds files by pattern.
+- `memory` reads and updates durable project notes.
+- `agent` delegates a focused task to a sub-agent when `<subagents>` is listed.
+- Team tools `task_create`, `task_list`, `task_update`, `send_message`, `check_messages`, and `spawn_teammate` coordinate background teammates.
+- Tools named `mcp__<server>__<tool>` come from configured MCP servers; read their descriptions before calling.
+
+## Memory
+- Durable notes about this project are listed in the `<memory>` section when present. Read an entry with the `memory` tool before relying on it.
+- Save decisions, constraints, and user preferences that will still matter in a later session.
+- Never store credentials, keys, tokens, or private personal data in memory.
+
+## Team
+- When work splits into independent parts, put them on the shared board with `task_create`, then `spawn_teammate` one background teammate per part.
+- Give every teammate a complete assignment: goal, files or areas to inspect, and what to report.
+- Collect reports with `check_messages`; `wait_secs` waits for teammates to finish first.
+- Keep ownership clear and do not duplicate a teammate's work. You still own the final answer and verification.
 
 ## Output
 - Be concise. Explain only what the user needs to know.
@@ -50,8 +69,14 @@ pub fn build(options: &PromptOptions) -> Vec<String> {
     if let Some(global) = global_context() {
         parts.push(global);
     }
+    if let Some(memory) = &options.memory {
+        parts.push(memory.clone());
+    }
     if let Some(skills) = &options.skills {
         parts.push(skills.clone());
+    }
+    if let Some(agents) = &options.agents {
+        parts.push(agents.clone());
     }
     parts.extend(options.append.iter().cloned());
     parts
@@ -97,10 +122,38 @@ mod tests {
             system_override: None,
             append: vec!["extra instructions".into()],
             skills: None,
+            memory: None,
+            agents: None,
         });
         assert!(parts[0].contains("mybot"));
         assert!(parts[1].contains("<environment>"));
         assert_eq!(parts.last().unwrap(), "extra instructions");
+    }
+
+    #[test]
+    fn memory_block_is_included_when_present() {
+        let parts = build(&PromptOptions {
+            cwd: std::env::temp_dir(),
+            system_override: None,
+            append: vec![],
+            skills: None,
+            memory: Some("<memory>note</memory>".into()),
+            agents: None,
+        });
+        assert!(parts.iter().any(|part| part.contains("<memory>note")));
+    }
+
+    #[test]
+    fn agent_block_is_included_when_present() {
+        let parts = build(&PromptOptions {
+            cwd: std::env::temp_dir(),
+            system_override: None,
+            append: vec![],
+            skills: None,
+            memory: None,
+            agents: Some("<subagents>- explore</subagents>".into()),
+        });
+        assert!(parts.iter().any(|part| part.contains("<subagents>")));
     }
 
     #[test]
@@ -110,6 +163,8 @@ mod tests {
             system_override: Some("custom".into()),
             append: vec![],
             skills: None,
+            memory: Some("<memory>note</memory>".into()),
+            agents: None,
         });
         assert_eq!(parts, vec!["custom".to_string()]);
     }

@@ -77,6 +77,36 @@ pub enum Command {
         #[command(subcommand)]
         command: PluginCommand,
     },
+    /// Inspect persistent project memory
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommand,
+    },
+    /// Manage Model Context Protocol servers
+    Mcp {
+        #[command(subcommand)]
+        command: McpCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum McpCommand {
+    /// List configured servers and the tools they expose
+    List,
+    /// Connect to one server and print its tools
+    Test { name: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum MemoryCommand {
+    /// List memory entries for the working directory
+    List,
+    /// Print one memory entry
+    Show { name: String },
+    /// Delete one memory entry
+    Delete { name: String },
+    /// Print the memory directory
+    Path,
 }
 
 #[derive(Debug, Subcommand)]

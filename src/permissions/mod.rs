@@ -131,7 +131,9 @@ impl PermissionEngine {
             "bash" => bash_rules::classify(&request.detail) == BashRisk::Safe,
             "read" | "grep" | "glob" => tool_path.map(|p| is_inside(&self.cwd, p)).unwrap_or(true),
             "write" | "edit" => tool_path.map(|p| is_inside(&self.cwd, p)).unwrap_or(false),
-            "todowrite" => true,
+            "todowrite" | "memory" => true,
+            "task_create" | "task_list" | "task_update" | "send_message" | "check_messages"
+            | "spawn_teammate" => true,
             _ => false,
         }
     }
@@ -209,6 +211,11 @@ pub fn request_for(
                 rules::allow_rule(tool, RuleMatcher::Path, format!("{parent}/*"))
             })
         }
+        _ if tool.starts_with("mcp__") => {
+            Some(rules::allow_rule(tool, RuleMatcher::Tool, ""))
+        }
+        "task_create" | "task_list" | "task_update" | "send_message" | "check_messages"
+        | "spawn_teammate" => Some(rules::allow_rule(tool, RuleMatcher::Tool, "")),
         _ => None,
     };
 
