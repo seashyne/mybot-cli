@@ -3,6 +3,7 @@ mod composer;
 mod markdown;
 mod permission;
 mod render;
+mod setup;
 mod term;
 mod theme;
 mod todo;
@@ -70,16 +71,39 @@ pub async fn run(options: TuiOptions) -> Result<()> {
         .canonicalize()
         .unwrap_or_else(|_| options.cwd.clone());
 
-    let config = Config::load()?;
+    let mut config = Config::load()?;
+    let permission = options.permission.unwrap_or(config.permissions.mode);
+
+    term::install_panic_hook();
+    let _guard = term::TerminalGuard::enter()
+        .map_err(|error| AppError::runtime(format!("cannot initialise terminal: {error}")))?;
+    let mut terminal = term::terminal()
+        .map_err(|error| AppError::runtime(format!("cannot create terminal: {error}")))?;
+
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Event>();
+    std::thread::spawn(move || {
+        while let Ok(event) = crossterm::event::read() {
+            if input_tx.send(event).is_err() {
+                break;
+            }
+        }
+    });
+
+    if !config.is_configured() && !setup::run(&mut terminal, &mut input_rx, &mut config).await? {
+        return Ok(());
+    }
+
     let resolved = config.resolve(options.model.as_deref())?;
     let provider: Arc<dyn crate::providers::Provider> =
         Arc::from(providers::build(&resolved)?);
-    let permission = options.permission.unwrap_or(config.permissions.mode);
 
+    let skills = Arc::new(crate::skills::SkillSet::discover(&cwd));
+    let plugins = Arc::new(crate::plugins::PluginSet::discover(&cwd));
     let system = prompt::build(&PromptOptions {
         cwd: cwd.clone(),
         system_override: options.system_override.clone(),
         append: options.append_system.clone(),
+        skills: skills.prompt_block(),
     });
 
     let session = if let Some(id) = &options.session_id {
@@ -102,7 +126,7 @@ pub async fn run(options: TuiOptions) -> Result<()> {
 
     let agent = Arc::new(Mutex::new(Agent::new(AgentOptions {
         provider,
-        tools: Arc::new(ToolRegistry::with_defaults()),
+        tools: Arc::new(ToolRegistry::with_skills(skills.clone())),
         permissions: Arc::new(PermissionEngine::new(
             permission,
             cwd.clone(),
@@ -135,22 +159,9 @@ pub async fn run(options: TuiOptions) -> Result<()> {
     let ctx = Ctx {
         agent: agent.clone(),
         tx: tx.clone(),
+        skills,
+        plugins,
     };
-
-    term::install_panic_hook();
-    let _guard = term::TerminalGuard::enter()
-        .map_err(|error| AppError::runtime(format!("cannot initialise terminal: {error}")))?;
-    let mut terminal = term::terminal()
-        .map_err(|error| AppError::runtime(format!("cannot create terminal: {error}")))?;
-
-    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<Event>();
-    std::thread::spawn(move || {
-        while let Ok(event) = crossterm::event::read() {
-            if input_tx.send(event).is_err() {
-                break;
-            }
-        }
-    });
 
     app.start_initial(&ctx);
 

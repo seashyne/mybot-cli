@@ -6,9 +6,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::agent::{Agent, AgentEvent, CompactOutcome};
-use crate::config::PermissionMode;
+use crate::agent::{Agent, AgentEvent, CompactOutcome, ProviderSwap};
+use crate::config::{Config, PermissionMode};
 use crate::permissions::Decision;
+use crate::providers;
 use crate::tools::TodoItem;
 
 use super::composer::Composer;
@@ -17,6 +18,51 @@ use super::permission::PermissionModal;
 pub struct Ctx {
     pub agent: Arc<Mutex<Agent>>,
     pub tx: mpsc::Sender<AgentEvent>,
+    pub skills: Arc<crate::skills::SkillSet>,
+    pub plugins: Arc<crate::plugins::PluginSet>,
+}
+
+pub struct ModelItem {
+    pub provider: String,
+    pub model: String,
+    pub ready: bool,
+}
+
+pub struct ModelPicker {
+    pub items: Vec<ModelItem>,
+    pub selected: usize,
+    /// `Some` while the user types a model name that is not in the list.
+    pub custom: Option<String>,
+    pub error: Option<String>,
+}
+
+impl ModelPicker {
+    pub fn from_config(config: &Config) -> Self {
+        let items = config
+            .providers
+            .iter()
+            .map(|(name, provider)| {
+                let model = provider
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| provider.kind.default_model().to_string());
+                let ready = config
+                    .resolve(Some(&format!("{name}/{model}")))
+                    .is_ok();
+                ModelItem {
+                    provider: name.clone(),
+                    model,
+                    ready,
+                }
+            })
+            .collect();
+        Self {
+            items,
+            selected: 0,
+            custom: None,
+            error: None,
+        }
+    }
 }
 
 pub struct Status {
@@ -52,6 +98,7 @@ pub struct App {
     pub composer: Composer,
     pub todos: Vec<TodoItem>,
     pub permission: Option<PermissionModal>,
+    pub model_picker: Option<ModelPicker>,
     pub status: Status,
     pub busy: bool,
     pub quit: bool,
@@ -74,6 +121,7 @@ impl App {
             composer: Composer::new(),
             todos: Vec::new(),
             permission: None,
+            model_picker: None,
             status,
             busy: false,
             quit: false,
@@ -246,12 +294,21 @@ impl App {
     }
 
     pub fn handle_paste(&mut self, text: &str) {
+        if let Some(picker) = &mut self.model_picker {
+            if let Some(buffer) = &mut picker.custom {
+                buffer.push_str(text.trim());
+            }
+            return;
+        }
         if self.permission.is_none() {
             self.composer.insert_str(text);
         }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent, ctx: &Ctx) {
+        if self.handle_model_key(key, ctx) {
+            return;
+        }
         if self.handle_permission_key(key) {
             return;
         }
@@ -340,6 +397,152 @@ impl App {
         }
     }
 
+    fn handle_model_key(&mut self, key: KeyEvent, ctx: &Ctx) -> bool {
+        if self.model_picker.is_none() {
+            return false;
+        }
+        let control = key.modifiers.contains(KeyModifiers::CONTROL);
+
+        // Read the pending action first so the picker is not borrowed twice.
+        enum Act {
+            None,
+            Close,
+            StopEditing,
+            Move(isize),
+            StartCustom,
+            Edit(Option<char>),
+            Apply(String, String),
+        }
+
+        let act = {
+            let picker = self.model_picker.as_ref().unwrap();
+            let editing = picker.custom.is_some();
+            match key.code {
+                KeyCode::Esc => {
+                    if editing {
+                        Act::StopEditing
+                    } else {
+                        Act::Close
+                    }
+                }
+                KeyCode::Char('c') if control => Act::Close,
+                KeyCode::Up | KeyCode::Char('k') if !editing => Act::Move(-1),
+                KeyCode::Down | KeyCode::Char('j') if !editing => Act::Move(1),
+                KeyCode::Backspace if editing => Act::Edit(None),
+                KeyCode::Char(ch) if editing && !control => Act::Edit(Some(ch)),
+                KeyCode::Enter => {
+                    if let Some(buffer) = &picker.custom {
+                        let model = buffer.trim().to_string();
+                        if model.is_empty() {
+                            Act::None
+                        } else {
+                            let provider = picker
+                                .items
+                                .get(picker.selected)
+                                .map(|item| item.provider.clone())
+                                .unwrap_or_else(|| self.status.provider.clone());
+                            Act::Apply(provider, model)
+                        }
+                    } else if picker.selected < picker.items.len() {
+                        let item = &picker.items[picker.selected];
+                        Act::Apply(item.provider.clone(), item.model.clone())
+                    } else {
+                        Act::StartCustom
+                    }
+                }
+                _ => Act::None,
+            }
+        };
+
+        match act {
+            Act::None => {}
+            Act::Close => {
+                self.model_picker = None;
+                self.info("model unchanged");
+            }
+            Act::StopEditing => {
+                if let Some(picker) = &mut self.model_picker {
+                    picker.custom = None;
+                }
+            }
+            Act::Move(delta) => {
+                if let Some(picker) = &mut self.model_picker {
+                    let max = picker.items.len();
+                    let current = picker.selected as isize + delta;
+                    picker.selected = current.clamp(0, max as isize) as usize;
+                    picker.error = None;
+                }
+            }
+            Act::StartCustom => {
+                if let Some(picker) = &mut self.model_picker {
+                    picker.custom = Some(String::new());
+                }
+            }
+            Act::Edit(Some(ch)) => {
+                if let Some(picker) = &mut self.model_picker
+                    && let Some(buffer) = &mut picker.custom
+                {
+                    buffer.push(ch);
+                }
+            }
+            Act::Edit(None) => {
+                if let Some(picker) = &mut self.model_picker
+                    && let Some(buffer) = &mut picker.custom
+                {
+                    buffer.pop();
+                }
+            }
+            Act::Apply(provider, model) => self.apply_model(ctx, &provider, &model),
+        }
+        true
+    }
+
+    fn apply_model(&mut self, ctx: &Ctx, provider: &str, model: &str) {
+        let attempt = (|| -> crate::error::Result<()> {
+            let mut config = Config::load()?;
+            let entry = config.providers.get_mut(provider).ok_or_else(|| {
+                crate::error::AppError::config(format!("unknown provider '{provider}'"))
+            })?;
+            entry.model = Some(model.to_string());
+            config.default_provider = Some(provider.to_string());
+
+            let resolved = config.resolve(Some(&format!("{provider}/{model}")))?;
+            let built: Arc<dyn crate::providers::Provider> =
+                Arc::from(providers::build(&resolved)?);
+            config.save()?;
+
+            let swap = ProviderSwap {
+                provider: built,
+                max_tokens: resolved.max_tokens,
+                temperature: resolved.temperature,
+                thinking_budget: resolved.thinking_budget,
+                retry: providers::RetryPolicy::from_resolved(&resolved),
+            };
+            let agent = ctx.agent.clone();
+            tokio::spawn(async move {
+                agent.lock().await.set_provider(swap);
+            });
+            Ok(())
+        })();
+
+        match attempt {
+            Ok(()) => {
+                self.status.provider = provider.to_string();
+                self.status.model = model.to_string();
+                self.model_picker = None;
+                self.info(format!("model: {provider}/{model}"));
+                self.transcript.push(Entry::Info(format!(
+                    "switched to {provider}/{model} (saved to config)"
+                )));
+            }
+            Err(error) => {
+                if let Some(picker) = &mut self.model_picker {
+                    picker.error = Some(error.to_string());
+                }
+            }
+        }
+    }
+
     fn submit(&mut self, ctx: &Ctx) {
         if self.busy {
             self.info("wait for the current turn to finish (Esc cancels)");
@@ -358,6 +561,16 @@ impl App {
         }
 
         self.transcript.push(Entry::User(trimmed.to_string()));
+        self.start_turn(trimmed.to_string(), ctx);
+    }
+
+    /// Send `prompt` to the model without touching the composer.
+    fn start_turn(&mut self, prompt: String, ctx: &Ctx) {
+        if self.busy {
+            self.info("wait for the current turn to finish (Esc cancels)");
+            return;
+        }
+
         self.busy = true;
         self.streaming_active = true;
         self.streaming.clear();
@@ -369,7 +582,6 @@ impl App {
         let agent = ctx.agent.clone();
         let tx = ctx.tx.clone();
         let cancel = self.cancel.clone();
-        let prompt = trimmed.to_string();
 
         tokio::spawn(async move {
             let mut agent = agent.lock().await;
@@ -379,13 +591,15 @@ impl App {
     }
 
     fn slash(&mut self, command: &str, ctx: &Ctx) {
-        let (name, _args) = command.split_once(' ').unwrap_or((command, ""));
+        let (name, args) = command.split_once(' ').unwrap_or((command, ""));
+        let args = args.trim();
 
         match name {
             "/quit" | "/exit" => self.quit = true,
             "/help" => {
                 self.transcript.push(Entry::Info(
-                    "commands: /help /new /model /sessions /status /compact /init /quit\n\
+                    "commands: /help /new /model /skills /skill /sessions /status /compact /init /quit\n\
+                     plugin commands: any /<name> listed by /skills\n\
                      keys: Enter send · Shift+Enter newline · Esc cancel/clear · Ctrl+C cancel/exit · Ctrl+D exit · PgUp/PgDn scroll"
                         .into(),
                 ));
@@ -412,12 +626,17 @@ impl App {
                     Err(error) => self.info(format!("cannot create session: {error}")),
                 }
             }
-            "/model" => {
-                self.info(format!(
-                    "model: {}/{} · change with `mybot -m provider/model`",
-                    self.status.provider, self.status.model
-                ));
-            }
+            "/model" => match Config::load() {
+                Ok(config) => {
+                    let picker = ModelPicker::from_config(&config);
+                    if picker.items.is_empty() {
+                        self.info("no providers configured");
+                    } else {
+                        self.model_picker = Some(picker);
+                    }
+                }
+                Err(error) => self.info(format!("cannot read config: {error}")),
+            },
             "/sessions" => match crate::session::Session::list() {
                 Ok(sessions) if sessions.is_empty() => self.info("no sessions yet"),
                 Ok(sessions) => {
@@ -445,6 +664,53 @@ impl App {
                     self.status.input_tokens,
                     self.status.output_tokens
                 )));
+            }
+            "/skills" => {
+                let mut text = String::new();
+                if ctx.skills.is_empty() {
+                    text.push_str("no skills installed\n");
+                    text.push_str("add ~/.mybot/skills/<name>/SKILL.md or a plugin with skills/\n");
+                } else {
+                    text.push_str(&format!("skills ({}):\n", ctx.skills.len()));
+                    for skill in &ctx.skills.skills {
+                        text.push_str(&format!(
+                            "  {:<18} {:<10} {}\n",
+                            skill.name,
+                            skill.source.label(),
+                            skill.description
+                        ));
+                    }
+                    text.push_str("load one with `skill` tool, or /skill <name>\n");
+                }
+                if !ctx.plugins.commands.is_empty() {
+                    text.push_str(&format!("\nplugin commands ({}):\n", ctx.plugins.commands.len()));
+                    for command in &ctx.plugins.commands {
+                        text.push_str(&format!(
+                            "  /{:<16} {:<12} {}\n",
+                            command.name, command.plugin, command.description
+                        ));
+                    }
+                }
+                self.transcript.push(Entry::Info(text.trim_end().to_string()));
+            }
+            "/skill" => {
+                if args.is_empty() {
+                    self.info("usage: /skill <name>");
+                    return;
+                }
+                match ctx.skills.get(args) {
+                    Some(skill) => {
+                        let prompt = format!(
+                            "Follow the skill `{}` for this request.\n\n{}",
+                            skill.name,
+                            skill.body.trim()
+                        );
+                        self.transcript
+                            .push(Entry::Info(format!("▸ skill {}", skill.name)));
+                        self.start_turn(prompt, ctx);
+                    }
+                    None => self.info(format!("unknown skill '{args}' (try /skills)")),
+                }
             }
             "/compact" => {
                 self.busy = true;
@@ -478,7 +744,21 @@ impl App {
                     }
                 }
             }
-            other => self.info(format!("unknown command {other} (try /help)")),
+            other => {
+                let command_name = other.trim_start_matches('/');
+                if let Some(command) = ctx.plugins.command(command_name) {
+                    let rendered = command.render(args);
+                    let label = if args.is_empty() {
+                        format!("▸ /{command_name}")
+                    } else {
+                        format!("▸ /{command_name} {args}")
+                    };
+                    self.transcript.push(Entry::Info(label));
+                    self.start_turn(rendered, ctx);
+                } else {
+                    self.info(format!("unknown command {other} (try /help)"));
+                }
+            }
         }
     }
 }

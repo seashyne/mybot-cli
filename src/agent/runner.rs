@@ -32,6 +32,15 @@ pub struct AgentOptions {
     pub retry: RetryPolicy,
 }
 
+/// Provider-side settings that can change while the agent is running.
+pub struct ProviderSwap {
+    pub provider: Arc<dyn Provider>,
+    pub max_tokens: u32,
+    pub temperature: Option<f32>,
+    pub thinking_budget: Option<u32>,
+    pub retry: RetryPolicy,
+}
+
 pub struct Agent {
     provider: Arc<dyn Provider>,
     tools: Arc<ToolRegistry>,
@@ -83,6 +92,15 @@ impl Agent {
 
     pub fn todos(&self) -> Arc<Mutex<Vec<TodoItem>>> {
         self.todos.clone()
+    }
+
+    /// Swap the model client at runtime without touching the conversation.
+    pub fn set_provider(&mut self, options: ProviderSwap) {
+        self.provider = options.provider;
+        self.max_tokens = options.max_tokens;
+        self.temperature = options.temperature;
+        self.thinking_budget = options.thinking_budget;
+        self.retry = options.retry;
     }
 
     /// Run one user turn to completion, including any tool-call iterations.

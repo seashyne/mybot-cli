@@ -2,7 +2,7 @@ use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
 
 use super::app::{App, Entry};
 use super::{markdown, theme, todo};
@@ -40,21 +40,66 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     if app.permission.is_some() {
         draw_permission(frame, app, area);
     }
+    if app.model_picker.is_some() {
+        draw_model_picker(frame, app, area);
+    }
 }
+
+const LOGO: [&str; 6] = [
+    " ███╗   ███╗██╗   ██╗██████╗  ██████╗ ████████╗",
+    " ████╗ ████║╚██╗ ██╔╝██╔══██╗██╔═══██╗╚══██╔══╝",
+    " ██╔████╔██║ ╚████╔╝ ██████╔╝██║   ██║   ██║   ",
+    " ██║╚██╔╝██║  ╚██╔╝  ██╔══██╗██║   ██║   ██║   ",
+    " ██║ ╚═╝ ██║   ██║   ██████╔╝╚██████╔╝   ██║   ",
+    " ╚═╝     ╚═╝   ╚═╝   ╚═════╝  ╚═════╝    ╚═╝   ",
+];
 
 fn transcript_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     if app.transcript.is_empty() && app.streaming.is_empty() {
-        lines.push(Line::from(Span::styled(
-            "mybot cli",
-            Style::default()
-                .fg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
-        )));
+        for (index, row) in LOGO.iter().enumerate() {
+            lines.push(Line::from(Span::styled(
+                row.to_string(),
+                Style::default()
+                    .fg(theme::GRADIENT[index.min(theme::GRADIENT.len() - 1)])
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                "mybot cli",
+                Style::default()
+                    .fg(theme::ACCENT)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "  ·  terminal coding agent",
+                Style::default().fg(theme::DIM),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                format!("{}/{}", app.status.provider, app.status.model),
+                Style::default()
+                    .fg(theme::CODE)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("  ·  permission {}", app.status.permission.label()),
+                Style::default().fg(theme::DIM),
+            ),
+        ]));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "Type a request, or /help for commands.",
+            "  Type a request, or /help for commands.",
+            Style::default().fg(theme::DIM),
+        )));
+        lines.push(Line::from(Span::styled(
+            "  /model switches provider · /compact frees context · Esc cancels",
             Style::default().fg(theme::DIM),
         )));
         return lines;
@@ -191,6 +236,7 @@ fn draw_composer(frame: &mut Frame, app: &App, area: Rect) {
     let title = if app.busy { " working… " } else { " message " };
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(border_style)
         .title(title);
     let inner = block.inner(area);
@@ -266,6 +312,7 @@ fn draw_permission(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Clear, rect);
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme::TOOL))
         .title(" permission required ");
     let inner = block.inner(rect);
@@ -298,8 +345,112 @@ fn draw_permission(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
-fn centered(area: Rect, width: u16, height: u16) -> Rect {
-    let x = area.x + area.width.saturating_sub(width) / 2;
+fn draw_model_picker(frame: &mut Frame, app: &App, area: Rect) {
+    let Some(picker) = &app.model_picker else {
+        return;
+    };
+
+    let rows = picker.items.len() + 1; // + custom row
+    let width = area.width.saturating_sub(8).clamp(30, 76);
+    let height = (rows as u16 + 6).min(area.height.saturating_sub(2)).max(8);
+    let rect = centered(area, width, height);
+
+    frame.render_widget(Clear, rect);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(theme::ACCENT))
+        .title(Span::styled(
+            " switch model ",
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ));
+    let inner = block.inner(rect);
+    frame.render_widget(block, rect);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for (index, item) in picker.items.iter().enumerate() {
+        let selected = index == picker.selected;
+        let current = item.provider == app.status.provider && item.model == app.status.model;
+        let marker = if selected { "▸ " } else { "  " };
+        let name_style = if selected {
+            Style::default()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(theme::ASSISTANT)
+        };
+        let tag = if current {
+            (" current", theme::CODE)
+        } else if item.ready {
+            ("", theme::DIM)
+        } else {
+            (" needs key", theme::ERROR)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(marker, Style::default().fg(theme::ACCENT)),
+            Span::styled(format!("{:<12}", item.provider), name_style),
+            Span::styled(
+                format!("{:<28}", item.model),
+                Style::default().fg(theme::ASSISTANT),
+            ),
+            Span::styled(tag.0, Style::default().fg(tag.1)),
+        ]));
+    }
+
+    let custom_selected = picker.selected >= picker.items.len();
+    let custom_marker = if custom_selected { "▸ " } else { "  " };
+    match &picker.custom {
+        Some(buffer) => {
+            lines.push(Line::from(vec![
+                Span::styled(custom_marker, Style::default().fg(theme::ACCENT)),
+                Span::styled(
+                    "custom      ",
+                    Style::default()
+                        .fg(theme::ACCENT)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled("› ", Style::default().fg(theme::ACCENT)),
+                Span::styled(buffer.clone(), Style::default().fg(theme::ASSISTANT)),
+                Span::styled("█", Style::default().fg(theme::ACCENT)),
+            ]));
+        }
+        None => {
+            lines.push(Line::from(vec![
+                Span::styled(custom_marker, Style::default().fg(theme::ACCENT)),
+                Span::styled(
+                    "custom      type any model name…",
+                    Style::default().fg(if custom_selected {
+                        theme::ACCENT
+                    } else {
+                        theme::DIM
+                    }),
+                ),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    if let Some(error) = &picker.error {
+        lines.push(Line::from(Span::styled(
+            error.clone(),
+            Style::default().fg(theme::ERROR),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        if picker.custom.is_some() {
+            "Enter apply · Esc back"
+        } else {
+            "↑↓ move · Enter apply · Esc close"
+        },
+        Style::default().fg(theme::DIM),
+    )));
+
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn centered(area: Rect, width: u16, height: u16) -> Rect {    let x = area.x + area.width.saturating_sub(width) / 2;
     let y = area.y + area.height.saturating_sub(height) / 2;
     Rect {
         x,
@@ -446,5 +597,46 @@ mod tests {
         app.transcript.push(Entry::Error("boom".into()));
         let text = flatten(&transcript_lines(&app));
         assert!(text.contains("! boom"));
+    }
+
+    #[test]
+    fn draws_the_model_picker_overlay() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let mut app = app();
+        app.model_picker = Some(crate::tui::app::ModelPicker {
+            items: vec![
+                crate::tui::app::ModelItem {
+                    provider: "anthropic".into(),
+                    model: "claude-sonnet-4-5".into(),
+                    ready: true,
+                },
+                crate::tui::app::ModelItem {
+                    provider: "openai".into(),
+                    model: "gpt-4o-mini".into(),
+                    ready: false,
+                },
+            ],
+            selected: 1,
+            custom: None,
+            error: None,
+        });
+
+        let backend = TestBackend::new(90, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| draw(frame, &mut app)).unwrap();
+
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(text.contains("switch model"));
+        assert!(text.contains("claude-sonnet-4-5"));
+        assert!(text.contains("needs key"));
+        assert!(text.contains("custom"));
     }
 }

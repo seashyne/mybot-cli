@@ -275,6 +275,18 @@ impl Config {
         self.providers.keys().map(String::as_str).collect()
     }
 
+    /// True when at least one provider has a key or points at a local server,
+    /// i.e. `resolve` can succeed without asking the user anything.
+    pub fn is_configured(&self) -> bool {
+        self.providers.values().any(|config| {
+            let base_url = config
+                .base_url
+                .clone()
+                .unwrap_or_else(|| config.kind.default_base_url().to_string());
+            resolve_api_key(config).is_some() || is_local_url(&base_url)
+        })
+    }
+
     /// Resolve a provider and model from CLI arguments plus config/env.
     ///
     /// `model_arg` accepts either `model` or `provider/model`.
@@ -381,6 +393,23 @@ mod tests {
         assert!(is_local_url("http://localhost:11434/v1"));
         assert!(is_local_url("http://127.0.0.1:8000/v1"));
         assert!(!is_local_url("https://api.openai.com/v1"));
+    }
+
+    #[test]
+    fn unconfigured_without_keys_or_local_urls() {
+        let config = Config::default();
+        assert!(!config.is_configured());
+    }
+
+    #[test]
+    fn local_provider_counts_as_configured() {
+        let mut config = Config::default();
+        config
+            .providers
+            .get_mut("openai")
+            .unwrap()
+            .base_url = Some("http://127.0.0.1:1234/v1".into());
+        assert!(config.is_configured());
     }
 
     #[test]

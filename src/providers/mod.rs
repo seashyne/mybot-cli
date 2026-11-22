@@ -1,6 +1,7 @@
 pub mod anthropic;
 pub mod mock;
 pub mod openai;
+pub mod presets;
 pub mod retry;
 pub mod sse;
 
