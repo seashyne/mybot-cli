@@ -3,3 +3,7 @@
 .mybot/
 .env
 .env.*
+
+# npm package artifacts
+npm/*.tgz
+npm/bin/mybot

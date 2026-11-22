@@ -1,0 +1,39 @@
+{
+  "name": "mybot-cli",
+  "version": "0.1.0",
+  "description": "Terminal AI coding agent written in Rust — installs the native binary",
+  "bin": {
+    "mybot": "bin/mybot.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "files": [
+    "bin/mybot.js",
+    "scripts/install.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seashyne/mybot-cli.git"
+  },
+  "keywords": [
+    "cli",
+    "ai",
+    "coding-agent",
+    "rust",
+    "tui"
+  ]
+}
