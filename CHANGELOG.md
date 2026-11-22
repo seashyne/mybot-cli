@@ -8,6 +8,39 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-22
+
+Fifth release: OS bash sandbox, diff previews, `/undo`, `web_fetch`, image
+attachments, and native Windows builds.
+
+### Added
+
+- **OS-level bash sandbox** — `bash` now runs inside bubblewrap (`bwrap`) on
+  Linux or Seatbelt (`sandbox-exec`) on macOS in `auto` (default) and `strict`
+  modes, keeping the filesystem read-only outside the workspace and `/tmp` and
+  hiding `~/.mybot` API keys; switch at runtime with `/sandbox [off|auto|strict]`.
+- **Multimodal image attachments** — attach PNG/JPEG/WebP/GIF images via
+  `/image <path|paste|clear>`, clipboard paste (`Ctrl+V` / `Alt+V`), or
+  drag-and-drop paths; encoded for both Anthropic and OpenAI-compatible models.
+- **Diff preview & `/undo` checkpoints** — permission prompts for `edit` and
+  `write` now render color-coded diffs, and `/undo` (`/rewind`) reverts all
+  file mutations from the previous turn.
+- **`web_fetch` tool** — built-in public HTTP/HTTPS fetcher with HTML stripping
+  and SSRF blocking for localhost, private, link-local, and CGNAT addresses.
+- **Tool output expansion & cumulative tokens** — press `Ctrl+O` to toggle
+  tool outputs in the transcript, and inspect cumulative session token totals
+  in `/status`.
+- **Native Windows (`x86_64-pc-windows-msvc`)** — added CI release binary/zip
+  packaging, self-update support, npm wrapper resolution, PowerShell fallback,
+  and `taskkill` process-tree cleanup.
+
+### Security
+
+- `config.toml` is now written with `0600` file permissions (`0700` parent
+  directory on creation) on Unix.
+- The npm `postinstall` script now verifies `sha256sums.txt` before finalizing
+  the installed binary.
+
 ## [0.4.0] - 2026-11-22
 
 Fourth release: welcome card, status bar cues, `@` mentions, and `/effort`.
@@ -168,7 +201,8 @@ First tagged release.
 - Skills and plugins, project context loading, an installer script, an npm
   package, and a documentation site.
 
-[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/seashyne/mybot-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/seashyne/mybot-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/seashyne/mybot-cli/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/seashyne/mybot-cli/compare/v0.1.0...v0.2.0

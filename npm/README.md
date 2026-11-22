@@ -34,7 +34,7 @@ Switch models later with `/model` inside the TUI.
 ## Pin a version
 
 ```bash
-MYBOT_VERSION=v0.4.0 npm install -g mybot-cli
+MYBOT_VERSION=v0.5.0 npm install -g mybot-cli
 ```
 
 ## Alternative installs

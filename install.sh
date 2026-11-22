@@ -9,7 +9,7 @@
 #
 # From a URL (downloads the latest release binary):
 #   curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
-#   curl -fsSL ... | sh -s -- --version v0.4.0 --prefix ~/bin
+#   curl -fsSL ... | sh -s -- --version v0.5.0 --prefix ~/bin
 #
 # Requirements: source mode needs a Rust toolchain (https://rustup.rs), a C
 # toolchain, CMake and Perl. Release mode needs curl or wget and tar.

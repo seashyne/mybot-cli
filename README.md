@@ -98,7 +98,7 @@ built from:
 
 ```bash
 $ mybot --version
-mybot 0.4.0 (e9be490)
+mybot 0.5.0 (66cdc54)
 ```
 
 `mybot version` adds the target triple, build profile, binary path, and config
@@ -109,7 +109,7 @@ directory; `--json` makes it machine-readable.
 ```bash
 mybot update --check          # only report whether a newer release exists
 mybot update                  # download, verify, and install it
-mybot update --tag v0.4.0     # install a specific release
+mybot update --tag v0.5.0     # install a specific release
 mybot update --force          # reinstall even when the version is unchanged
 ```
 
