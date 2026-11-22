@@ -67,6 +67,59 @@ pub enum Command {
         #[command(subcommand)]
         command: ProviderCommand,
     },
+    /// List and inspect skills
+    Skill {
+        #[command(subcommand)]
+        command: SkillCommand,
+    },
+    /// List, add and remove plugins
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SkillCommand {
+    /// List skills found for the current directory
+    List,
+    /// Print a skill's instructions
+    Show {
+        name: String,
+    },
+    /// Create a starter skill
+    New {
+        name: String,
+        /// Where to put it: project (.mybot/skills) or user (~/.mybot/skills)
+        #[arg(long, default_value = "project", value_parser = ["project", "user"])]
+        scope: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum PluginCommand {
+    /// List installed plugins and their commands
+    List,
+    /// Install a plugin by copying a directory into ~/.mybot/plugins
+    Add {
+        path: std::path::PathBuf,
+        /// Install into .mybot/plugins instead of ~/.mybot/plugins
+        #[arg(long)]
+        project: bool,
+    },
+    /// Remove an installed plugin
+    Remove {
+        name: String,
+        #[arg(long)]
+        project: bool,
+    },
+    /// Print a plugin command after substituting arguments
+    Command {
+        name: String,
+        /// Arguments substituted for $ARGUMENTS
+        #[arg(default_value = "")]
+        arguments: String,
+    },
 }
 
 #[derive(Debug, Args)]

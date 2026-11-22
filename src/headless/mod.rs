@@ -41,10 +41,12 @@ pub async fn run(options: ExecOptions) -> Result<()> {
     let provider: Arc<dyn crate::providers::Provider> =
         Arc::from(providers::build(&resolved)?);
 
+    let skills = Arc::new(crate::skills::SkillSet::discover(&cwd));
     let system = prompt::build(&PromptOptions {
         cwd: cwd.clone(),
         system_override: options.system_override.clone(),
         append: options.append_system.clone(),
+        skills: skills.prompt_block(),
     });
 
     let session = open_session(&options, &cwd, &resolved.name, &resolved.model)?;
@@ -53,7 +55,7 @@ pub async fn run(options: ExecOptions) -> Result<()> {
 
     let agent_options = AgentOptions {
         provider,
-        tools: Arc::new(ToolRegistry::with_defaults()),
+        tools: Arc::new(ToolRegistry::with_skills(skills)),
         permissions: Arc::new(PermissionEngine::new(
             options.permission,
             cwd.clone(),

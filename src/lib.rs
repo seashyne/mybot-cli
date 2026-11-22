@@ -5,10 +5,12 @@ pub mod config;
 pub mod error;
 pub mod headless;
 pub mod permissions;
+pub mod plugins;
 pub mod prompt;
 pub mod protocol;
 pub mod providers;
 pub mod session;
+pub mod skills;
 pub mod tools;
 
 #[cfg(feature = "tui")]

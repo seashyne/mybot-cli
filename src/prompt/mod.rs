@@ -9,6 +9,8 @@ pub struct PromptOptions {
     /// Replaces the built-in prompt entirely when set.
     pub system_override: Option<String>,
     pub append: Vec<String>,
+    /// `<skills>` section listing what the `skill` tool can load.
+    pub skills: Option<String>,
 }
 
 const BASE_PROMPT: &str = r#"You are mybot, a terminal coding agent working inside the user's project.
@@ -47,6 +49,9 @@ pub fn build(options: &PromptOptions) -> Vec<String> {
     }
     if let Some(global) = global_context() {
         parts.push(global);
+    }
+    if let Some(skills) = &options.skills {
+        parts.push(skills.clone());
     }
     parts.extend(options.append.iter().cloned());
     parts
@@ -91,6 +96,7 @@ mod tests {
             cwd: std::env::temp_dir(),
             system_override: None,
             append: vec!["extra instructions".into()],
+            skills: None,
         });
         assert!(parts[0].contains("mybot"));
         assert!(parts[1].contains("<environment>"));
@@ -103,6 +109,7 @@ mod tests {
             cwd: std::env::temp_dir(),
             system_override: Some("custom".into()),
             append: vec![],
+            skills: None,
         });
         assert_eq!(parts, vec!["custom".to_string()]);
     }

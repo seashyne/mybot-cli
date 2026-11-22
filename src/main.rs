@@ -4,7 +4,7 @@ use std::path::Path;
 use clap::Parser;
 use futures_util::StreamExt;
 
-use mybot::cli::{Cli, Command, ExecArgs, ProviderCommand};
+use mybot::cli::{Cli, Command, ExecArgs, PluginCommand, ProviderCommand, SkillCommand};
 use mybot::config::{Config, ProviderConfig, ProviderKind};
 use mybot::error::{AppError, Result};
 use mybot::headless::{self, ExecOptions};
@@ -33,6 +33,8 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Some(Command::Exec(args)) => exec_command(&cli, args).await,
         Some(Command::Init { directory }) => init_command(directory.as_deref()),
         Some(Command::Provider { command }) => provider_command(command).await,
+        Some(Command::Skill { command }) => skill_command(&cli, command),
+        Some(Command::Plugin { command }) => plugin_command(&cli, command),
         None => tui_command(cli).await,
     }
 }
@@ -303,4 +305,181 @@ async fn tui_command(_cli: Cli) -> Result<()> {
     Err(AppError::usage(
         "this build has no interactive UI; use `mybot exec \"<prompt>\"`",
     ))
+}
+
+fn skill_command(cli: &Cli, command: &SkillCommand) -> Result<()> {
+    let cwd = working_dir(cli)?;
+
+    match command {
+        SkillCommand::List => {
+            let skills = mybot::skills::SkillSet::discover(&cwd);
+            if skills.is_empty() {
+                println!("no skills found");
+                println!();
+                println!("add one with `mybot skill new <name>` or drop a");
+                println!("SKILL.md into ~/.mybot/skills/<name>/");
+                return Ok(());
+            }
+            println!("{} skill(s) for {}", skills.len(), cwd.display());
+            for skill in &skills.skills {
+                println!(
+                    "  {:<20} {:<12} {}",
+                    skill.name,
+                    skill.source.label(),
+                    skill.description
+                );
+            }
+        }
+        SkillCommand::Show { name } => {
+            let skills = mybot::skills::SkillSet::discover(&cwd);
+            let skill = skills.get(name).ok_or_else(|| {
+                AppError::usage(format!(
+                    "unknown skill '{name}' (available: {})",
+                    skills.names().join(", ")
+                ))
+            })?;
+            println!("{}", skill.body.trim_end());
+        }
+        SkillCommand::New { name, scope } => {
+            if !mybot::skills::is_valid_name(name) {
+                return Err(AppError::usage(
+                    "skill names use lowercase letters, digits, '-' and '_'",
+                ));
+            }
+            let root = if scope == "user" {
+                let home = dirs::home_dir()
+                    .ok_or_else(|| AppError::runtime("cannot find the home directory"))?;
+                home.join(".mybot/skills")
+            } else {
+                cwd.join(".mybot/skills")
+            };
+            let dir = root.join(name);
+            let path = dir.join("SKILL.md");
+            if path.exists() {
+                return Err(AppError::usage(format!(
+                    "{} already exists",
+                    path.display()
+                )));
+            }
+            std::fs::create_dir_all(&dir)?;
+            let template = format!(
+                "---\nname: {name}\ndescription: Describe when the model should use this skill\n---\n\n# {name}\n\n1. First step\n2. Second step\n\n## Rules\n\n- Keep the instructions concrete and short.\n"
+            );
+            std::fs::write(&path, template)?;
+            println!("created {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+fn plugin_command(cli: &Cli, command: &PluginCommand) -> Result<()> {
+    let cwd = working_dir(cli)?;
+
+    match command {
+        PluginCommand::List => {
+            let plugins = mybot::plugins::PluginSet::discover(&cwd);
+            if plugins.plugins.is_empty() {
+                println!("no plugins installed");
+                println!();
+                println!("install one with `mybot plugin add <directory>`");
+                return Ok(());
+            }
+            for plugin in &plugins.plugins {
+                let scope = if plugin.project { "project" } else { "user" };
+                println!(
+                    "{} {}  [{}]  {}",
+                    plugin.name,
+                    if plugin.version.is_empty() {
+                        String::new()
+                    } else {
+                        format!("v{}", plugin.version)
+                    },
+                    scope,
+                    plugin.description
+                );
+                println!("  {}", plugin.root.display());
+            }
+            if !plugins.commands.is_empty() {
+                println!("\ncommands:");
+                for command in &plugins.commands {
+                    println!(
+                        "  /{:<18} {:<12} {}",
+                        command.name, command.plugin, command.description
+                    );
+                }
+            }
+        }
+        PluginCommand::Add { path, project } => {
+            let source = path.canonicalize().map_err(|error| {
+                AppError::usage(format!("cannot read {}: {error}", path.display()))
+            })?;
+            if !source.is_dir() {
+                return Err(AppError::usage(format!(
+                    "{} is not a directory",
+                    source.display()
+                )));
+            }
+            let name = source
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .ok_or_else(|| AppError::usage("cannot determine the plugin name"))?;
+            let root = if *project {
+                cwd.join(".mybot/plugins")
+            } else {
+                let home = dirs::home_dir()
+                    .ok_or_else(|| AppError::runtime("cannot find the home directory"))?;
+                home.join(".mybot/plugins")
+            };
+            let target = root.join(&name);
+            if target.exists() {
+                return Err(AppError::usage(format!(
+                    "{} already exists (remove it first)",
+                    target.display()
+                )));
+            }
+            std::fs::create_dir_all(&root)?;
+            copy_dir(&source, &target)?;
+            println!("installed {} → {}", name, target.display());
+        }
+        PluginCommand::Remove { name, project } => {
+            let root = if *project {
+                cwd.join(".mybot/plugins")
+            } else {
+                let home = dirs::home_dir()
+                    .ok_or_else(|| AppError::runtime("cannot find the home directory"))?;
+                home.join(".mybot/plugins")
+            };
+            let target = root.join(name);
+            if !target.exists() {
+                return Err(AppError::usage(format!(
+                    "no plugin named '{name}' in {}",
+                    root.display()
+                )));
+            }
+            std::fs::remove_dir_all(&target)?;
+            println!("removed {}", target.display());
+        }
+        PluginCommand::Command { name, arguments } => {
+            let plugins = mybot::plugins::PluginSet::discover(&cwd);
+            let command = plugins.command(name).ok_or_else(|| {
+                AppError::usage(format!("unknown plugin command '{name}'"))
+            })?;
+            println!("{}", command.render(arguments));
+        }
+    }
+    Ok(())
+}
+
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }

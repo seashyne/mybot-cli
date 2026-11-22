@@ -4,6 +4,7 @@ pub mod edit_match;
 pub mod glob;
 pub mod grep;
 pub mod read;
+pub mod skill;
 pub mod todo;
 pub mod truncate;
 pub mod write;
@@ -126,6 +127,13 @@ impl ToolRegistry {
         registry
     }
 
+    /// Default tools plus the `skill` loader for the discovered skill set.
+    pub fn with_skills(skills: Arc<crate::skills::SkillSet>) -> Self {
+        let mut registry = Self::with_defaults();
+        registry.register(Arc::new(skill::SkillTool::new(skills)));
+        registry
+    }
+
     pub fn register(&mut self, tool: Arc<dyn Tool>) {
         self.tools.insert(tool.name().to_string(), tool);
     }
@@ -184,4 +192,17 @@ pub fn arg_u64(args: &Value, key: &str) -> Option<u64> {
 
 pub fn arg_bool(args: &Value, key: &str) -> Option<bool> {
     args.get(key).and_then(Value::as_bool)
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    #[test]
+    fn with_skills_registers_the_skill_tool() {
+        let skills = Arc::new(crate::skills::SkillSet::default());
+        let registry = ToolRegistry::with_skills(skills);
+        assert!(registry.names().contains(&"skill"));
+        assert!(registry.names().contains(&"read"));
+    }
 }
