@@ -8,7 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
-Unreleased work on top of `v0.1.0`.
+## [0.2.0] - 2026-11-22
+
+Second release: MCP servers, project memory, sub-agents, teams, syntax
+highlighting, and self-update.
 
 ### Added
 
@@ -83,5 +86,6 @@ First tagged release.
 - Skills and plugins, project context loading, an installer script, an npm
   package, and a documentation site.
 
-[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/seashyne/mybot-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/seashyne/mybot-cli/releases/tag/v0.1.0

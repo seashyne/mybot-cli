@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh 
   | sh -s -- --prefix /usr/local/bin
 # pin a release
 curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
-  | sh -s -- --version v0.1.0
+  | sh -s -- --version v0.2.0
 # remove it
 curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh \
   | sh -s -- --uninstall
@@ -41,7 +41,7 @@ mybot
 ```
 
 The package is a small wrapper that downloads the native binary on first run
-(also works with `npx mybot-cli`). Set `MYBOT_VERSION=v0.1.0` to pin a release.
+(also works with `npx mybot-cli`). Set `MYBOT_VERSION=v0.2.0` to pin a release.
 
 ### Build from source
 

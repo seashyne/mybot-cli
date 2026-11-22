@@ -1,6 +1,6 @@
 {
   "name": "mybot-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Terminal AI coding agent written in Rust — installs the native binary",
   "bin": {
     "mybot": "bin/mybot.js"
