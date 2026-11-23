@@ -12,15 +12,28 @@ use crate::tui::app::App;
 use crate::tui::{theme, todo};
 
 pub(super) fn draw_composer_hint(frame: &mut Frame, area: Rect) {
+    let key = Style::default()
+        .fg(theme::ASSISTANT)
+        .add_modifier(Modifier::BOLD);
+    let dim = Style::default().fg(theme::DIM);
+    let sep = Style::default().fg(theme::BORDER);
     let line = Line::from(vec![
         Span::styled(
             " Start",
             Style::default().fg(theme::USER).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(
-            " · @ file or plugin · / autocomplete · Ctrl+V image · Ctrl+O expand",
-            Style::default().fg(theme::DIM),
-        ),
+        Span::styled(" · ", sep),
+        Span::styled("@", key),
+        Span::styled(" file or plugin", dim),
+        Span::styled(" · ", sep),
+        Span::styled("/", key),
+        Span::styled(" commands", dim),
+        Span::styled(" · ", sep),
+        Span::styled("Ctrl+V", key),
+        Span::styled(" image", dim),
+        Span::styled(" · ", sep),
+        Span::styled("Ctrl+O", key),
+        Span::styled(" expand", dim),
     ]);
     frame.render_widget(Paragraph::new(line), area);
 }

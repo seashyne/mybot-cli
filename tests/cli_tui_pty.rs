@@ -210,17 +210,18 @@ async fn tui_renders_welcome_palette_reply_and_exits_cleanly_in_pty() {
     let mut screen = String::new();
 
     assert!(
-        pty.wait_for("Ready", &mut screen, Duration::from_secs(5)),
+        pty.wait_for("Ask mybot anything", &mut screen, Duration::from_secs(5)),
         "expected welcome screen in PTY, got:\n{}",
         strip_ansi(&screen)
     );
-    assert!(strip_ansi(&screen).contains("Ask mybot anything"));
+    assert!(strip_ansi(&screen).contains("Ready"));
 
     // Open command palette with `/`, verify commands appear, then dismiss with Esc.
+    screen.clear();
     pty.send(b"/");
     assert!(
-        pty.wait_for("/sandbox", &mut screen, Duration::from_secs(3)),
-        "expected /sandbox in command palette, got:\n{}",
+        pty.wait_for("/tools", &mut screen, Duration::from_secs(3)),
+        "expected /tools in command palette, got:\n{}",
         strip_ansi(&screen)
     );
     pty.send(b"\x1b");

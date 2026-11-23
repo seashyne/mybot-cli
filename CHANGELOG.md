@@ -15,16 +15,15 @@ attachments, and native Windows builds.
 
 ### Added
 
-- **OS-level bash sandbox** — `bash` now runs inside bubblewrap (`bwrap`) on
-  Linux or Seatbelt (`sandbox-exec`) on macOS in `auto` (default) and `strict`
-  modes, keeping the filesystem read-only outside the workspace and `/tmp` and
-  hiding `~/.mybot` API keys; switch at runtime with `/sandbox [off|auto|strict]`.
-- **Multimodal image attachments** — attach PNG/JPEG/WebP/GIF images via
-  `/image <path|paste|clear>`, clipboard paste (`Ctrl+V` / `Alt+V`), or
-  drag-and-drop paths; encoded for both Anthropic and OpenAI-compatible models.
-- **Diff preview & `/undo` checkpoints** — permission prompts for `edit` and
-  `write` now render color-coded diffs, and `/undo` (`/rewind`) reverts all
-  file mutations from the previous turn.
+- **OS-level bash sandbox** — isolate `bash` via `bwrap` / `sandbox-exec` (`/sandbox`);
+  keeps the filesystem read-only outside the workspace and `/tmp` and hides
+  `~/.mybot` API keys in `auto` (default) and `strict` modes.
+- **Multimodal image attachments** — attach or paste images with `/image` or `Ctrl+V`;
+  supports PNG/JPEG/WebP/GIF, `Alt+V`, and drag-and-drop paths for both
+  Anthropic and OpenAI-compatible models.
+- **Diff previews & `/undo` checkpoints** — review color diffs and revert edits with `/undo`;
+  permission prompts for `edit` and `write` render unified diffs, and `/undo`
+  (`/rewind`) restores all file mutations from the previous turn.
 - **`web_fetch` tool** — built-in public HTTP/HTTPS fetcher with HTML stripping
   and SSRF blocking for localhost, private, link-local, and CGNAT addresses.
 - **Tool output expansion & cumulative tokens** — press `Ctrl+O` to toggle

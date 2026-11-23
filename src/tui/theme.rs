@@ -1,14 +1,14 @@
 use ratatui::style::Color;
 
-pub const USER: Color = Color::Cyan;
+pub const USER: Color = Color::Rgb(56, 189, 248);
 pub const ASSISTANT: Color = Color::White;
 pub const TOOL: Color = Color::Yellow;
 pub const ERROR: Color = Color::Red;
-pub const DIM: Color = Color::DarkGray;
-pub const ACCENT: Color = Color::Magenta;
+pub const DIM: Color = Color::Rgb(148, 163, 184);
+pub const ACCENT: Color = Color::Rgb(129, 140, 248);
 pub const CODE: Color = Color::Green;
-pub const LINK: Color = Color::Blue;
-pub const BORDER: Color = Color::DarkGray;
+pub const LINK: Color = Color::Rgb(96, 165, 250);
+pub const BORDER: Color = Color::Rgb(71, 85, 105);
 
 /// Gradient used by the welcome banner, violet → cyan.
 pub const GRADIENT: [Color; 6] = [

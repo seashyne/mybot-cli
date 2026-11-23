@@ -41,13 +41,11 @@ pub(super) fn lines(app: &App, width: usize) -> Vec<Line<'static>> {
         return out;
     }
 
-    let card_w = width.clamp(54, 86);
+    let card_w = width.saturating_sub(2).max(54);
     let inner_w = card_w - 2;
     let margin = " ".repeat((width - card_w) / 2);
 
     out.push(top_border(&margin, inner_w, app.busy));
-    out.push(card_row(&margin, inner_w, status_spans(app, inner_w)));
-    out.push(card_row(&margin, inner_w, Vec::new()));
     out.push(card_row(
         &margin,
         inner_w,
@@ -64,7 +62,7 @@ pub(super) fn lines(app: &App, width: usize) -> Vec<Line<'static>> {
         "Use /permissions for tool approvals, or /init for AGENTS.md.",
         "Use /model to switch models, /effort for reasoning, /help for all.",
     ] {
-        out.push(tip_row(&margin, inner_w, tip, theme::ASSISTANT));
+        out.push(tip_row(&margin, inner_w, tip, false));
     }
 
     out.push(Line::from(Span::styled(
@@ -80,14 +78,18 @@ pub(super) fn lines(app: &App, width: usize) -> Vec<Line<'static>> {
                 "What's new",
                 Style::default().fg(theme::USER).add_modifier(Modifier::BOLD),
             ),
+            Span::styled(" · ", Style::default().fg(theme::DIM)),
             Span::styled(
-                " · /changelog for history",
-                Style::default().fg(theme::DIM),
+                "/changelog",
+                Style::default()
+                    .fg(theme::ASSISTANT)
+                    .add_modifier(Modifier::BOLD),
             ),
+            Span::styled(" for history", Style::default().fg(theme::DIM)),
         ],
     ));
-    for item in crate::version::latest_changelog_highlights(2) {
-        out.push(tip_row(&margin, inner_w, &item, theme::DIM));
+    for item in crate::version::latest_changelog_highlights(3) {
+        out.push(tip_row(&margin, inner_w, &item, true));
     }
     out.push(Line::from(Span::styled(
         format!("{margin}╰{}╯", "─".repeat(inner_w)),
@@ -164,41 +166,70 @@ fn top_border(margin: &str, inner_w: usize, busy: bool) -> Line<'static> {
     ])
 }
 
-fn status_spans(app: &App, inner_w: usize) -> Vec<Span<'static>> {
-    let effort = EffortLevel::from_budget(app.status.thinking_budget);
-    let model = format!("{}/{}", app.status.provider, app.status.model);
-    let perm = permission_label(app.status.permission);
-    let perm_style = permission_style(app.status.permission);
-    let eff = format!("effort {}", effort.label());
-    let static_len = 2 + model.chars().count() + 3 + perm.len() + 3 + eff.len() + 3;
-    let cwd_budget = inner_w.saturating_sub(static_len + 2).max(8);
-    let cwd = short_cwd(&app.cwd, cwd_budget);
-
+fn tip_row(margin: &str, inner_w: usize, text: &str, is_changelog: bool) -> Line<'static> {
+    let available = inner_w.saturating_sub(6);
+    let clipped = truncate(text, available);
     let mut spans = vec![
         Span::raw("  "),
-        Span::styled(model, Style::default().fg(theme::CODE).add_modifier(Modifier::BOLD)),
-        Span::styled(" · ", Style::default().fg(theme::DIM)),
-        Span::styled(perm, perm_style),
-        Span::styled(" · ", Style::default().fg(theme::DIM)),
-        Span::styled(eff, Style::default().fg(theme::DIM)),
-        Span::styled(" · ", Style::default().fg(theme::DIM)),
-        Span::styled(cwd, Style::default().fg(theme::DIM)),
+        Span::styled("› ", Style::default().fg(theme::ACCENT)),
     ];
-    fit_spans(&mut spans, inner_w);
-    spans
+    let dim = Style::default().fg(theme::DIM);
+    let bright = Style::default().fg(theme::ASSISTANT);
+
+    if is_changelog && let Some((head, tail)) = clipped.split_once(" — ") {
+        spans.extend(highlight_inline(head, bright));
+        spans.push(Span::styled(" — ", dim));
+        spans.extend(highlight_inline(tail, dim));
+    } else {
+        spans.extend(highlight_inline(&clipped, dim));
+    }
+
+    card_row(margin, inner_w, spans)
 }
 
-fn tip_row(margin: &str, inner_w: usize, text: &str, color: ratatui::style::Color) -> Line<'static> {
-    let available = inner_w.saturating_sub(6);
-    card_row(
-        margin,
-        inner_w,
-        vec![
-            Span::raw("  "),
-            Span::styled("› ", Style::default().fg(theme::ACCENT)),
-            Span::styled(truncate(text, available), Style::default().fg(color)),
-        ],
-    )
+fn highlight_inline(text: &str, base: Style) -> Vec<Span<'static>> {
+    let hi = Style::default()
+        .fg(theme::ASSISTANT)
+        .add_modifier(Modifier::BOLD);
+    let mut spans = Vec::new();
+    let mut plain_start = 0usize;
+    let mut i = 0usize;
+
+    while i < text.len() {
+        let rest = &text[i..];
+        let prev = text[..i].chars().next_back();
+        let at_word_start = matches!(prev, None | Some(' ' | '('));
+        let token_len = if at_word_start && rest.starts_with('/') {
+            let alpha = rest[1..]
+                .bytes()
+                .take_while(|b| b.is_ascii_lowercase())
+                .count();
+            if alpha > 0 { Some(1 + alpha) } else { None }
+        } else {
+            ["Ctrl+V", "Ctrl+O", "Alt+V", "AGENTS.md"]
+                .into_iter()
+                .find(|kw| at_word_start && rest.starts_with(kw))
+                .map(str::len)
+        };
+
+        if let Some(len) = token_len {
+            if plain_start < i {
+                spans.push(Span::styled(text[plain_start..i].to_string(), base));
+            }
+            spans.push(Span::styled(text[i..i + len].to_string(), hi));
+            i += len;
+            plain_start = i;
+        } else if let Some(ch) = rest.chars().next() {
+            i += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+
+    if plain_start < text.len() {
+        spans.push(Span::styled(text[plain_start..].to_string(), base));
+    }
+    spans
 }
 
 fn card_row(margin: &str, inner_w: usize, mut spans: Vec<Span<'static>>) -> Line<'static> {
@@ -243,8 +274,8 @@ fn fit_spans(spans: &mut Vec<Span<'static>>, max_width: usize) {
 
 pub(in crate::tui::render) fn permission_label(mode: PermissionMode) -> &'static str {
     match mode {
-        PermissionMode::Ask => "ask",
-        PermissionMode::Auto => "auto",
+        PermissionMode::Ask => "ask first",
+        PermissionMode::Auto => "auto approve",
         PermissionMode::Full => "full access",
     }
 }

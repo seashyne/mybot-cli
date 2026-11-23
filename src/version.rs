@@ -37,17 +37,27 @@ pub fn latest_changelog_highlights(limit: usize) -> Vec<String> {
             if items.len() >= limit {
                 break;
             }
-            items.push(rest.replace("**", ""));
+            items.push(clean_changelog_item(rest));
         } else if line.starts_with("  ")
             && !trimmed.is_empty()
             && let Some(last) = items.last_mut()
         {
             last.push(' ');
-            last.push_str(&trimmed.replace("**", ""));
+            last.push_str(&clean_changelog_item(trimmed));
+        }
+    }
+
+    for item in &mut items {
+        if let Some((head, _)) = item.split_once("; ") {
+            *item = head.trim().to_string();
         }
     }
 
     items
+}
+
+fn clean_changelog_item(text: &str) -> String {
+    text.replace("**", "").replace('`', "")
 }
 
 pub fn profile() -> &'static str {
