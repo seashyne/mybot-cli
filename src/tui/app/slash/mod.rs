@@ -33,6 +33,8 @@ impl App {
             "/export" => self.export_command(args),
             "/copy" | "/yank" => self.copy_command(args),
             "/find" | "/search" => self.find_command(args),
+            "/test" | "/check" => self.test_command(args, ctx),
+            "/diff" | "/git" => self.diff_command(),
             "/config" => self.config_command(),
             "/doctor" => self.doctor_command(ctx),
             "/keys" | "/hotkeys" => self.keys_command(),

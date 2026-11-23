@@ -68,7 +68,36 @@ impl Assembler {
         entry.json.push_str(json);
     }
 
-    pub fn finish(self) -> Assembled {
+    pub fn finish(mut self) -> Assembled {
+        if self.thinking.is_empty() && self.text.contains("<think>") {
+            let (cleaned, extracted) = extract_tagged_blocks(&self.text, "<think>", "</think>");
+            if !extracted.is_empty() {
+                self.thinking = extracted.join("\n").trim().to_string();
+                self.text = cleaned;
+            }
+        }
+
+        if self.tools.is_empty() && self.text.contains("<tool_call>") {
+            let (cleaned, raw_calls) =
+                extract_tagged_blocks(&self.text, "<tool_call>", "</tool_call>");
+            for raw in raw_calls {
+                if let Some((name, args_json)) = parse_xml_tool_call(&raw) {
+                    let index = self.tools.len();
+                    self.tools.insert(
+                        index,
+                        PartialTool {
+                            id: format!("call_{index}"),
+                            name,
+                            json: args_json,
+                        },
+                    );
+                }
+            }
+            if !self.tools.is_empty() {
+                self.text = cleaned.trim().to_string();
+            }
+        }
+
         let mut blocks = Vec::new();
         if !self.text.is_empty() {
             blocks.push(Block::Text {
@@ -125,6 +154,55 @@ impl Assembler {
     }
 }
 
+fn extract_tagged_blocks(text: &str, open: &str, close: &str) -> (String, Vec<String>) {
+    let mut cleaned = String::with_capacity(text.len());
+    let mut blocks = Vec::new();
+    let mut rest = text;
+
+    while let Some(start) = rest.find(open) {
+        cleaned.push_str(&rest[..start]);
+        let after_open = &rest[start + open.len()..];
+        if let Some(end) = after_open.find(close) {
+            blocks.push(after_open[..end].trim().to_string());
+            rest = &after_open[end + close.len()..];
+        } else {
+            // Unclosed tag: leave the remainder untouched.
+            cleaned.push_str(&rest[start..]);
+            rest = "";
+            break;
+        }
+    }
+    cleaned.push_str(rest);
+    (cleaned, blocks)
+}
+
+fn parse_xml_tool_call(raw: &str) -> Option<(String, String)> {
+    let trimmed = raw
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let value: Value = serde_json::from_str(trimmed).ok()?;
+    let name = ["name", "tool", "function"]
+        .into_iter()
+        .find_map(|key| value.get(key).and_then(Value::as_str))?
+        .trim()
+        .to_string();
+    if name.is_empty() {
+        return None;
+    }
+    let args = ["arguments", "parameters", "args", "input"]
+        .into_iter()
+        .find_map(|key| value.get(key))
+        .map(|val| match val {
+            Value::String(s) => s.clone(),
+            other => other.to_string(),
+        })
+        .unwrap_or_else(|| "{}".to_string());
+    Some((name, args))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,5 +257,19 @@ mod tests {
         let assembled = assembler.finish();
         assert_eq!(assembled.invocations[0].name, "read");
         assert_eq!(assembled.invocations[1].name, "glob");
+    }
+
+    #[test]
+    fn extracts_xml_tool_call_and_think_blocks_from_local_model_text() {
+        let mut assembler = Assembler::new();
+        assembler.on_text(
+            "<think>Need to run cargo test</think>Running tests now.\n<tool_call>{\"name\": \"bash\", \"arguments\": {\"command\": \"cargo test\"}}</tool_call>",
+        );
+        let assembled = assembler.finish();
+        assert_eq!(assembled.text, "Running tests now.");
+        assert_eq!(assembled.invocations.len(), 1);
+        assert_eq!(assembled.invocations[0].name, "bash");
+        let args = assembled.invocations[0].arguments.as_ref().unwrap();
+        assert_eq!(args["command"], "cargo test");
     }
 }

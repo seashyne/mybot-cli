@@ -1,7 +1,15 @@
 use std::io::Write;
+use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 
-use super::super::{App, Entry};
+use tokio::sync::Mutex;
+
+use super::super::{App, Ctx, Entry};
+use crate::agent::AgentEvent;
+use crate::tools::bash::BashTool;
+use crate::tools::checkpoint::CheckpointStore;
+use crate::tools::{Tool, ToolCtx};
 
 const MAX_FIND_MATCHES: usize = 20;
 
@@ -104,6 +112,106 @@ impl App {
             self.transcript.push(Entry::Info(report.trim_end().to_string()));
         }
     }
+
+    pub(super) fn test_command(&mut self, args: &str, ctx: &Ctx) {
+        let cmd_str = if !args.trim().is_empty() {
+            args.trim().to_string()
+        } else if let Some(detected) = detect_test_command(&self.cwd) {
+            detected.to_string()
+        } else {
+            self.info("no test suite detected; run /test <command>");
+            return;
+        };
+
+        let id = format!("slash_test_{}", self.transcript.len());
+        self.transcript.push(Entry::Tool {
+            id: id.clone(),
+            name: "test".into(),
+            summary: format!("$ {cmd_str}"),
+            content: "running…".into(),
+            is_error: false,
+            running: true,
+            expanded: true,
+        });
+        self.info(format!("running: {cmd_str}"));
+
+        let tx = ctx.tx.clone();
+        let tool_ctx = ToolCtx {
+            cwd: self.cwd.clone(),
+            cancel: self.cancel.clone(),
+            todos: Arc::new(Mutex::new(Vec::new())),
+            checkpoints: CheckpointStore::new(),
+            sandbox: ctx.permissions.sandbox(),
+        };
+
+        tokio::spawn(async move {
+            let out = BashTool
+                .execute(&serde_json::json!({ "command": cmd_str }), &tool_ctx)
+                .await;
+            let _ = tx
+                .send(AgentEvent::ToolEnd {
+                    id,
+                    name: "test".into(),
+                    content: out.content,
+                    is_error: out.is_error,
+                })
+                .await;
+        });
+    }
+
+    pub(super) fn diff_command(&mut self) {
+        let report = collect_git_diff(&self.cwd);
+        self.transcript.push(Entry::Info(report));
+    }
+}
+
+pub(crate) fn detect_test_command(cwd: &Path) -> Option<&'static str> {
+    if cwd.join("Cargo.toml").exists() {
+        Some("cargo test")
+    } else if cwd.join("package.json").exists() {
+        Some("npm test")
+    } else if cwd.join("go.mod").exists() {
+        Some("go test ./...")
+    } else if cwd.join("pyproject.toml").exists() || cwd.join("pytest.ini").exists() {
+        Some("pytest")
+    } else if cwd.join("Makefile").exists() {
+        Some("make test")
+    } else {
+        None
+    }
+}
+
+fn collect_git_diff(cwd: &Path) -> String {
+    let Ok(status) = std::process::Command::new("git")
+        .args(["status", "-sb"])
+        .current_dir(cwd)
+        .output()
+    else {
+        return "git is not installed".into();
+    };
+    if !status.status.success() {
+        return format!("not a git repository: {}", cwd.display());
+    }
+
+    let mut out = String::from("git status:\n");
+    for line in String::from_utf8_lossy(&status.stdout).lines() {
+        out.push_str(&format!("  {line}\n"));
+    }
+
+    if let Ok(stat) = std::process::Command::new("git")
+        .args(["diff", "--stat"])
+        .current_dir(cwd)
+        .output()
+    {
+        let stat_text = String::from_utf8_lossy(&stat.stdout);
+        if !stat_text.trim().is_empty() {
+            out.push_str("\ngit diff --stat:\n");
+            for line in stat_text.lines().take(30) {
+                out.push_str(&format!("  {line}\n"));
+            }
+        }
+    }
+    out.trim_end().to_string()
 }
 
 pub(crate) fn last_assistant_text(transcript: &[Entry]) -> Option<&str> {
@@ -222,5 +330,13 @@ mod tests {
             }
             _ => panic!("expected search results"),
         }
+    }
+
+    #[test]
+    fn detects_test_command_for_common_project_types() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(detect_test_command(dir.path()), None);
+        std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname=\"a\"\n").unwrap();
+        assert_eq!(detect_test_command(dir.path()), Some("cargo test"));
     }
 }

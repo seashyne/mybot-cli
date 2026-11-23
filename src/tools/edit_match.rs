@@ -10,8 +10,9 @@ pub struct Edit {
 pub fn apply_edits(original: &str, edits: &[Edit]) -> Result<String, String> {
     let mut content = original.to_string();
 
-    for (index, edit) in edits.iter().enumerate() {
+    for (index, raw_edit) in edits.iter().enumerate() {
         let position = index + 1;
+        let edit = clean_line_numbers(raw_edit);
         if edit.old.is_empty() {
             return Err(format!("edit #{position}: oldText must not be empty"));
         }
@@ -44,6 +45,54 @@ pub fn apply_edits(original: &str, edits: &[Edit]) -> Result<String, String> {
     }
 
     Ok(content)
+}
+
+/// Strip `N→` line-number prefixes if a model copied lines verbatim from `read` output.
+fn clean_line_numbers(edit: &Edit) -> Edit {
+    let (old, stripped_old) = strip_read_gutter(&edit.old);
+    let new = if stripped_old {
+        strip_read_gutter(&edit.new).0
+    } else {
+        edit.new.clone()
+    };
+    Edit {
+        old,
+        new,
+        replace_all: edit.replace_all,
+    }
+}
+
+fn strip_read_gutter(text: &str) -> (String, bool) {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return (text.to_string(), false);
+    }
+    let all_numbered = lines
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .all(|l| split_gutter_line(l).is_some());
+    if !all_numbered {
+        return (text.to_string(), false);
+    }
+    let mut out: String = lines
+        .iter()
+        .map(|l| split_gutter_line(l).unwrap_or(l))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if text.ends_with('\n') {
+        out.push('\n');
+    }
+    (out, true)
+}
+
+fn split_gutter_line(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start_matches(' ');
+    let arrow = trimmed.find('→')?;
+    if arrow > 0 && trimmed[..arrow].bytes().all(|b| b.is_ascii_digit()) {
+        Some(&trimmed[arrow + '→'.len_utf8()..])
+    } else {
+        None
+    }
 }
 
 /// Match ignoring leading/trailing whitespace on each line. Requires a unique
@@ -168,5 +217,15 @@ mod tests {
     #[test]
     fn missing_text_is_error() {
         assert!(apply_edits("abc", &[edit("zzz", "x")]).is_err());
+    }
+
+    #[test]
+    fn strips_line_number_gutter_copied_from_read_tool() {
+        let out = apply_edits(
+            "fn a() {\n    let x = 1;\n}\n",
+            &[edit("     2→    let x = 1;", "     2→    let x = 42;")],
+        )
+        .unwrap();
+        assert_eq!(out, "fn a() {\n    let x = 42;\n}\n");
     }
 }

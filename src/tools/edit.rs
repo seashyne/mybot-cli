@@ -95,8 +95,9 @@ impl Tool for EditTool {
     }
 }
 
-/// Accept both `{path, edits:[...]}` and the legacy `{file_path, old_string,
-/// new_string, replace_all}` shape used by other agents.
+/// Accept `{path, edits:[...]}` as well as top-level `{path|file_path,
+/// oldText|old_string, newText|new_string, replace_all|replaceAll}` shapes used
+/// across coding models.
 fn parse_edits(args: &Value) -> Result<Vec<Edit>, String> {
     if let Some(list) = args.get("edits").and_then(Value::as_array) {
         if list.is_empty() {
@@ -106,36 +107,48 @@ fn parse_edits(args: &Value) -> Result<Vec<Edit>, String> {
         for (index, entry) in list.iter().enumerate() {
             let old = entry
                 .get("oldText")
+                .or_else(|| entry.get("old_string"))
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("edits[{index}] is missing oldText"))?;
             let new = entry
                 .get("newText")
+                .or_else(|| entry.get("new_string"))
                 .and_then(Value::as_str)
                 .ok_or_else(|| format!("edits[{index}] is missing newText"))?;
+            let replace_all = entry
+                .get("replace_all")
+                .or_else(|| entry.get("replaceAll"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             edits.push(Edit {
                 old: old.to_string(),
                 new: new.to_string(),
-                replace_all: false,
+                replace_all,
             });
         }
         return Ok(edits);
     }
 
     if let (Some(old), Some(new)) = (
-        args.get("old_string").and_then(Value::as_str),
-        args.get("new_string").and_then(Value::as_str),
+        args.get("oldText")
+            .or_else(|| args.get("old_string"))
+            .and_then(Value::as_str),
+        args.get("newText")
+            .or_else(|| args.get("new_string"))
+            .and_then(Value::as_str),
     ) {
         return Ok(vec![Edit {
             old: old.to_string(),
             new: new.to_string(),
             replace_all: args
                 .get("replace_all")
+                .or_else(|| args.get("replaceAll"))
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         }]);
     }
 
-    Err("expected {path, edits:[{oldText,newText}]}".into())
+    Err("expected {path, edits:[{oldText,newText}]} or {path, oldText, newText}".into())
 }
 
 #[cfg(test)]

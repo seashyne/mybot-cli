@@ -212,6 +212,22 @@ pub const COMMANDS: &[CommandSpec] = &[
         idle_only: false,
     },
     CommandSpec {
+        name: "test",
+        aliases: &["check"],
+        args: "[command]",
+        description: "Run project tests in the OS sandbox",
+        category: Category::Context,
+        idle_only: false,
+    },
+    CommandSpec {
+        name: "diff",
+        aliases: &["git"],
+        args: "",
+        description: "Show git status and uncommitted diff",
+        category: Category::Context,
+        idle_only: false,
+    },
+    CommandSpec {
         name: "config",
         aliases: &[],
         args: "",
