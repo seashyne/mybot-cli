@@ -8,6 +8,37 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-23
+
+Sixth release: interactive custom provider/key setup, `/test` & `/diff`
+workflows, local GGUF tool-call resiliency, and Thai / RGB TUI polish.
+
+### Added
+
+- **Custom endpoint form & `/key`** — configure any URL, model, or API key via `/model`, `/custom`, or `/key`;
+  lists all 14 preset providers in the picker, opens a 3-field inline form for
+  custom endpoints or missing keys, and supports `api_key_command` for password
+  managers.
+- **Project `/test`, `/diff`, `/copy` & `/find`** — run sandboxed test suites with `/test` and inspect Git status with `/diff`;
+  copy the last reply or fenced code block via `/copy` (`Ctrl+Y`) and search
+  transcript history with `/find`.
+- **Local model & Thai TUI polish** — auto-parse XML `<tool_call>` / `<think>` blocks and strip `read` line numbers in `edit`;
+  adds `read` directory listing fallback, auto-probes `/v1/models` on startup,
+  and enforces replying in the user's language.
+- **Cross-platform CI & Windows `install.ps1`** — added GitHub Actions CI matrix
+  (Linux, macOS, Windows), PowerShell one-line installer `install.ps1`, and
+  Unix PTY end-to-end TUI tests.
+
+### Fixed
+
+- Unified the TUI color palette to Truecolor RGB, widened the welcome card,
+  removed the duplicate status row, and normalized Thai Sara Am (`U+0E33`) and
+  zero-width combining marks so terminal columns and cursor positions stay
+  aligned in KDE Konsole.
+- Allowed toolchain caches (`~/.cargo/registry`, `~/.cargo/git`, `~/.cache`,
+  `~/.npm`) inside the OS sandbox while keeping `~/.mybot` masked by `tmpfs`
+  even when launched from `$HOME`.
+
 ## [0.5.0] - 2026-11-22
 
 Fifth release: OS bash sandbox, diff previews, `/undo`, `web_fetch`, image
@@ -200,7 +231,8 @@ First tagged release.
 - Skills and plugins, project context loading, an installer script, an npm
   package, and a documentation site.
 
-[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/seashyne/mybot-cli/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/seashyne/mybot-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/seashyne/mybot-cli/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/seashyne/mybot-cli/compare/v0.2.0...v0.3.0
