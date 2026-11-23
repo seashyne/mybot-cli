@@ -57,12 +57,9 @@ fn write_executable(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 fn probe(path: &Path, expected_version: &str) -> Result<()> {
-    let output = Command::new(path)
-        .arg("--version")
-        .output()
-        .map_err(|error| {
-            AppError::runtime(format!("downloaded binary cannot run: {error}"))
-        })?;
+    let output = run_probe(path).map_err(|error| {
+        AppError::runtime(format!("downloaded binary cannot run: {error}"))
+    })?;
     if !output.status.success() {
         return Err(AppError::runtime(format!(
             "downloaded binary exited with {} when probed",
@@ -82,6 +79,31 @@ fn probe(path: &Path, expected_version: &str) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+fn run_probe(path: &Path) -> std::io::Result<std::process::Output> {
+    // On Unix, a concurrent fork() in another thread can briefly hold the staged
+    // file descriptor open and trigger ETXTBSY until exec/close completes.
+    for attempt in 0..8 {
+        match Command::new(path).arg("--version").output() {
+            Ok(output) => return Ok(output),
+            Err(err) if is_text_busy(&err) && attempt < 7 => {
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    unreachable!()
+}
+
+#[cfg(unix)]
+fn is_text_busy(err: &std::io::Error) -> bool {
+    err.raw_os_error() == Some(libc::ETXTBSY)
+}
+
+#[cfg(not(unix))]
+fn is_text_busy(_err: &std::io::Error) -> bool {
+    false
 }
 
 #[cfg(unix)]

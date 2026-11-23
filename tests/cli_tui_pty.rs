@@ -128,6 +128,24 @@ impl Pty {
         }
         strip_ansi(buf).contains(needle)
     }
+
+    fn wait_exit(&mut self, buf: &mut String, timeout: Duration) -> std::process::ExitStatus {
+        let deadline = Instant::now() + timeout;
+        let mut chunk = [0u8; 4096];
+        while Instant::now() < deadline {
+            while let Ok(n) = self.master.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                buf.push_str(&String::from_utf8_lossy(&chunk[..n]));
+            }
+            if let Some(status) = self.child.try_wait().unwrap() {
+                return status;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("timed out waiting for mybot PTY exit:\n{}", strip_ansi(buf));
+    }
 }
 
 impl Drop for Pty {
@@ -218,6 +236,6 @@ async fn tui_renders_welcome_palette_reply_and_exits_cleanly_in_pty() {
 
     // Exit cleanly via `/quit`.
     pty.send(b"/quit\r");
-    let status = pty.child.wait().unwrap();
+    let status = pty.wait_exit(&mut screen, Duration::from_secs(5));
     assert!(status.success(), "expected clean exit, got {status}");
 }

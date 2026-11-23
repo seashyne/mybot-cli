@@ -229,22 +229,33 @@ impl App {
     }
 
     pub(super) fn submit(&mut self, ctx: &Ctx) {
+        let preview = self.composer.text();
+        let trimmed = preview.trim();
+        if trimmed.is_empty() && self.pending_images.is_empty() {
+            return;
+        }
+
+        if let Some(cmd) = trimmed.strip_prefix('/') {
+            let name = cmd.split_whitespace().next().unwrap_or("");
+            let needs_idle = crate::tui::commands::find(name)
+                .map(|spec| spec.idle_only)
+                .unwrap_or(true);
+            if self.busy && needs_idle {
+                self.info("wait for the current turn to finish (Esc or /stop cancels)");
+                return;
+            }
+            let text = self.composer.take();
+            self.slash(text.trim(), ctx);
+            return;
+        }
+
         if self.busy {
-            self.info("wait for the current turn to finish (Esc cancels)");
+            self.info("wait for the current turn to finish (Esc or /stop cancels)");
             return;
         }
 
         let text = self.composer.take();
         let trimmed = text.trim();
-        if trimmed.is_empty() && self.pending_images.is_empty() {
-            return;
-        }
-
-        if trimmed.starts_with('/') {
-            self.slash(trimmed, ctx);
-            return;
-        }
-
         let images = std::mem::take(&mut self.pending_images);
         let prompt = if trimmed.is_empty() {
             "Describe or inspect the attached image(s).".to_string()

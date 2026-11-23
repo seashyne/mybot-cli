@@ -209,7 +209,7 @@ pub fn resolve_path(cwd: &Path, raw: &str) -> PathBuf {
 /// Render a path relative to the working directory when possible.
 pub fn display_path(cwd: &Path, path: &Path) -> String {
     match path.strip_prefix(cwd) {
-        Ok(relative) => relative.display().to_string(),
+        Ok(relative) => relative.display().to_string().replace('\\', "/"),
         Err(_) => path.display().to_string(),
     }
 }
