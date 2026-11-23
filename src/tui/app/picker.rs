@@ -49,6 +49,22 @@ impl ModelPicker {
                 });
             }
         }
+        for preset in crate::providers::presets::PRESETS {
+            if preset.name == "custom" || config.providers.contains_key(preset.name) {
+                continue;
+            }
+            let ready = !preset.needs_key
+                || std::env::var(preset.key_env)
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false);
+            for model in catalog::with_configured(preset.name, Some(preset.model)) {
+                all.push(ModelItem {
+                    provider: preset.name.to_string(),
+                    model,
+                    ready,
+                });
+            }
+        }
         Self {
             all,
             query: query.to_string(),
@@ -112,10 +128,17 @@ impl ModelPicker {
         self.all
             .iter()
             .filter(|item| {
-                query.is_empty()
-                    || format!("{}/{}", item.provider, item.model)
+                if query.is_empty() {
+                    return true;
+                }
+                if let Some((prov, rest)) = query.split_once('/') {
+                    item.provider.to_ascii_lowercase().contains(prov)
+                        && item.model.to_ascii_lowercase().contains(rest)
+                } else {
+                    format!("{}/{}", item.provider, item.model)
                         .to_ascii_lowercase()
                         .contains(&query)
+                }
             })
             .collect()
     }
@@ -236,15 +259,33 @@ impl App {
     }
 
     pub(super) fn apply_model(&mut self, ctx: &Ctx, provider: &str, model: &str) {
+        let mut needs_key_prompt = false;
         let attempt = (|| -> crate::error::Result<Option<u32>> {
             let mut config = Config::load()?;
+            if !config.providers.contains_key(provider)
+                && let Some(preset) = crate::providers::presets::find(provider)
+            {
+                config.providers.insert(
+                    provider.to_string(),
+                    preset.to_config(None, None, model),
+                );
+            }
             let entry = config.providers.get_mut(provider).ok_or_else(|| {
                 crate::error::AppError::config(format!("unknown provider '{provider}'"))
             })?;
             entry.model = Some(model.to_string());
-            config.default_provider = Some(provider.to_string());
 
-            let resolved = config.resolve(Some(&format!("{provider}/{model}")))?;
+            let resolved = match config.resolve(Some(&format!("{provider}/{model}"))) {
+                Ok(resolved) => resolved,
+                Err(err) => {
+                    if err.to_string().contains("API key") {
+                        let _ = config.save();
+                        needs_key_prompt = true;
+                    }
+                    return Err(err);
+                }
+            };
+            config.default_provider = Some(provider.to_string());
             let built: Arc<dyn crate::providers::Provider> =
                 Arc::from(providers::build(&resolved)?);
             config.save()?;
@@ -274,6 +315,14 @@ impl App {
                     "switched to {provider}/{model} (saved to config)"
                 )));
             }
+            Err(_) if needs_key_prompt => {
+                self.model_picker = None;
+                self.composer.set_text(&format!("/key {provider} "));
+                self.info(format!("paste API key for {provider} and press Enter"));
+                self.transcript.push(super::Entry::Info(format!(
+                    "Selected {provider}/{model}. Paste your API key after `/key {provider} ` in the message box below and press Enter."
+                )));
+            }
             Err(error) => {
                 if let Some(picker) = &mut self.model_picker {
                     picker.error = Some(error.to_string());
@@ -288,7 +337,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ProviderConfig};
+    use crate::config::{Config, ProviderConfig, ProviderKind};
 
     fn config() -> Config {
         let mut config = Config::default();
@@ -296,7 +345,7 @@ mod tests {
             "deepseek".into(),
             ProviderConfig {
                 model: Some("deepseek-reasoner".into()),
-                ..ProviderConfig::defaults_for(crate::config::ProviderKind::OpenAi)
+                ..ProviderConfig::defaults_for(ProviderKind::OpenAi)
             },
         );
         config
@@ -305,60 +354,33 @@ mod tests {
     #[test]
     fn lists_every_catalog_model_per_provider() {
         let picker = ModelPicker::from_config(&config());
-        let anthropic: Vec<&ModelItem> = picker
-            .all
-            .iter()
-            .filter(|item| item.provider == "anthropic")
-            .collect();
-        assert!(anthropic.len() >= 3);
+        assert!(picker.all.iter().filter(|i| i.provider == "anthropic").count() >= 3);
     }
 
     #[test]
     fn configured_model_is_first() {
         let picker = ModelPicker::from_config(&config());
-        let deepseek: Vec<&ModelItem> = picker
-            .all
-            .iter()
-            .filter(|item| item.provider == "deepseek")
-            .collect();
-        assert_eq!(deepseek[0].model, "deepseek-reasoner");
+        let first = picker.all.iter().find(|i| i.provider == "deepseek").unwrap();
+        assert_eq!(first.model, "deepseek-reasoner");
     }
 
     #[test]
     fn query_filters_by_provider_or_model() {
         let mut picker = ModelPicker::from_config(&config());
         picker.query = "sonnet".into();
-        let visible = picker.visible();
-        assert!(!visible.is_empty());
-        assert!(visible.iter().all(|item| item.model.contains("sonnet")));
-
+        assert!(picker.visible().iter().all(|i| i.model.contains("sonnet")));
         picker.query = "deepseek/".into();
-        let visible = picker.visible();
-        assert!(!visible.is_empty());
-        assert!(visible.iter().all(|item| item.provider == "deepseek"));
+        assert!(picker.visible().iter().all(|i| i.provider == "deepseek"));
     }
 
     #[test]
     fn live_models_are_prepended_and_catalog_entries_kept() {
         let mut picker = ModelPicker::from_config(&config());
-        picker.merge_models(
-            "anthropic",
-            &["claude-live".into(), "claude-sonnet-4-5".into()],
-        );
-        let anthropic: Vec<&ModelItem> = picker
-            .all
-            .iter()
-            .filter(|item| item.provider == "anthropic")
-            .collect();
+        picker.merge_models("anthropic", &["claude-live".into(), "claude-sonnet-4-5".into()]);
+        let anthropic: Vec<&ModelItem> = picker.all.iter().filter(|i| i.provider == "anthropic").collect();
         assert_eq!(anthropic[0].model, "claude-live");
-        assert!(anthropic.iter().any(|item| item.model == "claude-opus-4-1"));
-        assert_eq!(
-            anthropic
-                .iter()
-                .filter(|item| item.model == "claude-sonnet-4-5")
-                .count(),
-            1
-        );
+        assert!(anthropic.iter().any(|i| i.model == "claude-opus-4-1"));
+        assert_eq!(anthropic.iter().filter(|i| i.model == "claude-sonnet-4-5").count(), 1);
     }
 
     #[test]

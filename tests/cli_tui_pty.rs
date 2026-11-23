@@ -220,10 +220,11 @@ async fn tui_renders_welcome_palette_reply_and_exits_cleanly_in_pty() {
     screen.clear();
     pty.send(b"/");
     assert!(
-        pty.wait_for("/tools", &mut screen, Duration::from_secs(3)),
-        "expected /tools in command palette, got:\n{}",
+        pty.wait_for("Tab complete", &mut screen, Duration::from_secs(3)),
+        "expected command palette in PTY, got:\n{}",
         strip_ansi(&screen)
     );
+    assert!(strip_ansi(&screen).contains("/key"));
     pty.send(b"\x1b");
     std::thread::sleep(Duration::from_millis(80));
 

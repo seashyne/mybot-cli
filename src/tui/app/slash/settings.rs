@@ -84,6 +84,82 @@ impl App {
         self.model_picker = Some(picker);
     }
 
+    pub(super) fn key_command(&mut self, args: &str, ctx: &Ctx) {
+        let parts: Vec<&str> = args.split_whitespace().collect();
+        if parts.is_empty() {
+            self.transcript.push(Entry::Info(
+                "connect an API key or local server URL:\n\
+                 \x20 /key anthropic sk-ant-...         Claude (Sonnet 4.5, Opus 4.1)\n\
+                 \x20 /key openai sk-...                OpenAI (GPT-5, GPT-4.1, o3)\n\
+                 \x20 /key gemini AIza...               Google Gemini 2.5 Pro/Flash\n\
+                 \x20 /key deepseek sk-...              DeepSeek Chat / Reasoner\n\
+                 \x20 /key minimax <key>                MiniMax M2.5 / M3.1-Flash\n\
+                 \x20 /key openrouter sk-or-...         OpenRouter (all models)\n\
+                 \x20 /key groq gsk_...                 Groq (Llama 3.3, Qwen3)\n\
+                 \x20 /key lmstudio http://127.0.0.1:1234/v1   Update LM Studio URL\n\
+                 \ntip: open /model, select any provider, and press Enter to connect."
+                    .into(),
+            ));
+            return;
+        }
+
+        let Ok(mut config) = Config::load_raw() else {
+            self.info("cannot read config");
+            return;
+        };
+
+        let (provider_name, secret_or_url, extra_url) = if parts.len() == 1 {
+            let token = parts[0];
+            let guessed = if token.starts_with("sk-ant-") {
+                "anthropic"
+            } else if token.starts_with("sk-or-") {
+                "openrouter"
+            } else if token.starts_with("gsk_") {
+                "groq"
+            } else if token.starts_with("AIza") {
+                "gemini"
+            } else if token.starts_with("sk-") && matches!(self.status.provider.as_str(), "lmstudio" | "ollama") {
+                "openai"
+            } else {
+                self.status.provider.as_str()
+            };
+            (guessed.to_string(), token, None)
+        } else {
+            (parts[0].to_ascii_lowercase(), parts[1], parts.get(2).copied())
+        };
+
+        if !config.providers.contains_key(&provider_name) {
+            let default_cfg = crate::providers::presets::find(&provider_name)
+                .map(|p| p.to_config(None, None, p.model))
+                .unwrap_or_else(|| crate::config::ProviderConfig::defaults_for(crate::config::ProviderKind::OpenAi));
+            config.providers.insert(provider_name.clone(), default_cfg);
+        }
+
+        let entry = config.providers.get_mut(&provider_name).unwrap();
+        if secret_or_url.starts_with("http://") || secret_or_url.starts_with("https://") {
+            entry.base_url = Some(secret_or_url.to_string());
+        } else {
+            entry.api_key = Some(secret_or_url.to_string());
+        }
+        if let Some(url) = extra_url.filter(|u| u.starts_with("http://") || u.starts_with("https://")) {
+            entry.base_url = Some(url.to_string());
+        }
+
+        let model = entry
+            .model
+            .clone()
+            .or_else(|| crate::providers::presets::find(&provider_name).map(|p| p.model.to_string()))
+            .unwrap_or_else(|| entry.kind.default_model().to_string());
+        entry.model = Some(model.clone());
+        config.default_provider = Some(provider_name.clone());
+
+        if let Err(error) = config.save() {
+            self.info(format!("cannot save config: {error}"));
+            return;
+        }
+        self.apply_model(ctx, &provider_name, &model);
+    }
+
     pub(super) fn permissions_command(&mut self, args: &str, ctx: &Ctx) {
         if args.is_empty() {
             let mut text = format!("permission mode: {}\n", ctx.permissions.mode().label());

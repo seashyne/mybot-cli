@@ -68,6 +68,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         idle_only: false,
     },
     CommandSpec {
+        name: "key",
+        aliases: &["login", "apikey", "auth"],
+        args: "[provider] <key|url>",
+        description: "Save an API key or server URL and connect",
+        category: Category::Model,
+        idle_only: false,
+    },
+    CommandSpec {
         name: "effort",
         aliases: &["thinking"],
         args: "[off|low|medium|high]",
