@@ -183,7 +183,8 @@ fn draw_transcript(frame: &mut Frame, app: &mut App, area: Rect) {
 }
 
 /// Pre-wrap styled lines to the viewport width so scrolling and the total line
-/// count stay exact.
+/// count stay exact, and decompose Thai Sara Am (`U+0E33`) into Nikhahit + Sara Aa
+/// so terminal cell widths stay 1:1 with grapheme clusters.
 fn wrap_lines(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
     let width = width.max(1);
     let mut out = Vec::new();
@@ -194,9 +195,11 @@ fn wrap_lines(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
 
         for span in line.spans {
             let style = span.style;
+            let normalized = normalize_thai_cells(&span.content);
             let mut chunk = String::new();
-            for ch in span.content.chars() {
-                if used == width {
+            for ch in normalized.chars() {
+                let ch_w = char_display_width(ch);
+                if used + ch_w > width && used > 0 {
                     if !chunk.is_empty() {
                         current.push(Span::styled(std::mem::take(&mut chunk), style));
                     }
@@ -204,7 +207,7 @@ fn wrap_lines(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
                     used = 0;
                 }
                 chunk.push(ch);
-                used += 1;
+                used += ch_w;
             }
             if !chunk.is_empty() {
                 current.push(Span::styled(chunk, style));
@@ -215,4 +218,23 @@ fn wrap_lines(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
     }
 
     out
+}
+
+pub(in crate::tui) fn normalize_thai_cells(text: &str) -> String {
+    if !text.contains('\u{0E33}') {
+        return text.to_string();
+    }
+    text.replace('\u{0E33}', "\u{0E4D}\u{0E32}")
+}
+
+pub(in crate::tui) fn char_display_width(ch: char) -> usize {
+    match ch {
+        '\u{0E31}'
+        | '\u{0E34}'..='\u{0E3A}'
+        | '\u{0E47}'..='\u{0E4E}'
+        | '\u{0300}'..='\u{036F}'
+        | '\u{200B}'..='\u{200D}'
+        | '\u{FE00}'..='\u{FE0F}' => 0,
+        _ => 1,
+    }
 }

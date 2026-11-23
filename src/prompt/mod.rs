@@ -51,6 +51,7 @@ const BASE_PROMPT: &str = r#"You are mybot, a terminal coding agent working insi
 - Keep ownership clear and do not duplicate a teammate's work. You still own the final answer and verification.
 
 ## Output
+- Always reply in the exact language the user writes in (for example, reply in Thai when the user writes in Thai, and in English when the user writes in English). Never switch to Chinese or any other language unless the user explicitly writes in or asks for that language.
 - Be concise. Explain only what the user needs to know.
 - Use markdown. Reference code as `path:line`.
 - When you finish, state what changed and what you verified."#;

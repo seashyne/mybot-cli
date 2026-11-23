@@ -100,11 +100,22 @@ pub(super) fn draw_composer(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let text = app.composer.lines().join("\n");
+    let text = super::normalize_thai_cells(&app.composer.lines().join("\n"));
     frame.render_widget(Paragraph::new(text).wrap(Wrap { trim: false }), text_area);
 
     let (row, col) = app.composer.cursor();
-    let x = text_area.x + (col as u16).min(text_area.width.saturating_sub(1));
+    let display_col: usize = app
+        .composer
+        .lines()
+        .get(row)
+        .map(|line| {
+            line.chars()
+                .take(col)
+                .map(|ch| if ch == '\u{0E33}' { 1 } else { super::char_display_width(ch) })
+                .sum()
+        })
+        .unwrap_or(col);
+    let x = text_area.x + (display_col as u16).min(text_area.width.saturating_sub(1));
     let y = text_area.y + (row as u16).min(text_area.height.saturating_sub(1));
     frame.set_cursor_position((x, y));
 }
