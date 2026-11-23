@@ -66,6 +66,7 @@ impl App {
                 }
             }
             KeyCode::Char('o') if control => self.toggle_tool_expansion(),
+            KeyCode::Char('y') if control => self.copy_command(""),
             KeyCode::Char('v') if control || alt => self.attach_clipboard_image(),
             KeyCode::Esc => {
                 if self.busy {

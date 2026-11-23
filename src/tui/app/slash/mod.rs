@@ -2,6 +2,7 @@ use super::{App, Ctx};
 
 mod session;
 mod settings;
+mod transcript;
 mod view;
 
 impl App {
@@ -30,6 +31,8 @@ impl App {
             "/undo" | "/rewind" => self.undo_command(ctx),
             "/stop" | "/cancel" => self.stop_command(),
             "/export" => self.export_command(args),
+            "/copy" | "/yank" => self.copy_command(args),
+            "/find" | "/search" => self.find_command(args),
             "/config" => self.config_command(),
             "/doctor" => self.doctor_command(ctx),
             "/keys" | "/hotkeys" => self.keys_command(),

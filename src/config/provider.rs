@@ -46,6 +46,9 @@ pub struct ProviderConfig {
     pub api_key_env: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+    /// Optional shell command whose stdout provides the API key (e.g. `secret-tool lookup ...` or `security find-generic-password ...`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_command: Option<String>,
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default = "default_max_tokens")]
@@ -88,6 +91,7 @@ impl ProviderConfig {
             base_url: None,
             api_key_env: Some(kind.default_api_key_env().into()),
             api_key: None,
+            api_key_command: None,
             model: Some(kind.default_model().into()),
             max_tokens: default_max_tokens(),
             thinking_budget: None,
@@ -163,4 +167,97 @@ impl EffortLevel {
             Self::High => Some("high"),
         }
     }
+}
+
+/// Write a sensitive config file with owner-only permissions (`0600` on Unix).
+pub fn write_restricted(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        let created = !parent.exists();
+        std::fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        if created {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
+    }
+
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::fs::write(path, text)
+    }
+}
+
+pub(super) fn has_key_hint(config: &ProviderConfig) -> bool {
+    config.api_key.as_ref().is_some_and(|k| !k.trim().is_empty())
+        || config
+            .api_key_command
+            .as_ref()
+            .is_some_and(|c| !c.trim().is_empty())
+        || resolve_env_key(config).is_some()
+}
+
+pub(super) fn resolve_api_key(config: &ProviderConfig) -> Option<String> {
+    if let Some(key) = config.api_key.as_ref().filter(|k| !k.trim().is_empty()) {
+        return Some(key.trim().to_string());
+    }
+    if let Some(key) = resolve_env_key(config) {
+        return Some(key);
+    }
+    let command = config
+        .api_key_command
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())?;
+    run_key_command(command)
+}
+
+fn resolve_env_key(config: &ProviderConfig) -> Option<String> {
+    let env_name = config
+        .api_key_env
+        .clone()
+        .unwrap_or_else(|| config.kind.default_api_key_env().to_string());
+    std::env::var(env_name)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(|v| v.trim().to_string())
+}
+
+fn run_key_command(command: &str) -> Option<String> {
+    #[cfg(windows)]
+    let output = std::process::Command::new("cmd")
+        .args(["/C", command])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    #[cfg(not(windows))]
+    let output = std::process::Command::new("sh")
+        .args(["-c", command])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if text.is_empty() { None } else { Some(text) }
 }

@@ -33,6 +33,14 @@ curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh 
 
 The script verifies `sha256sums.txt` when the release publishes one.
 
+### Windows (PowerShell)
+
+Downloads `mybot-x86_64-pc-windows-msvc.exe` into `%LOCALAPPDATA%\Programs\mybot\bin` and adds it to your User `PATH`:
+
+```powershell
+irm https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.ps1 | iex
+```
+
 ### npm
 
 ```bash

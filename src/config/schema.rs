@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub use super::provider::{ProviderConfig, ProviderKind};
+pub use super::provider::{ProviderConfig, ProviderKind, write_restricted};
+use super::provider::{has_key_hint, resolve_api_key};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -179,7 +180,7 @@ impl Config {
                 .base_url
                 .clone()
                 .unwrap_or_else(|| config.kind.default_base_url().to_string());
-            resolve_api_key(config).is_some() || is_local_url(&base_url)
+            has_key_hint(config) || is_local_url(&base_url)
         })
     }
 
@@ -202,7 +203,7 @@ impl Config {
             .or_else(|| {
                 self.providers
                     .iter()
-                    .find(|(_, cfg)| resolve_api_key(cfg).is_some())
+                    .find(|(_, cfg)| has_key_hint(cfg))
                     .map(|(name, _)| name.clone())
             })
             .ok_or_else(|| {
@@ -257,56 +258,6 @@ impl Config {
             retry_max_delay_ms: config.retry_max_delay_ms,
         })
     }
-}
-
-/// Write a sensitive config file with owner-only permissions (`0600` on Unix).
-pub fn write_restricted(path: &std::path::Path, text: &str) -> std::io::Result<()> {
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        let created = !parent.exists();
-        std::fs::create_dir_all(parent)?;
-        #[cfg(unix)]
-        if created {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
-        }
-    }
-
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-        Ok(())
-    }
-
-    #[cfg(not(unix))]
-    {
-        std::fs::write(path, text)
-    }
-}
-
-fn resolve_api_key(config: &ProviderConfig) -> Option<String> {
-    if let Some(key) = config.api_key.as_ref().filter(|k| !k.trim().is_empty()) {
-        return Some(key.trim().to_string());
-    }
-    let env_name = config
-        .api_key_env
-        .clone()
-        .unwrap_or_else(|| config.kind.default_api_key_env().to_string());
-    std::env::var(env_name)
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .map(|v| v.trim().to_string())
 }
 
 #[cfg(test)]
@@ -366,5 +317,15 @@ mod tests {
             .mode()
             & 0o777;
         assert_eq!(dir_mode, 0o700);
+    }
+
+    #[test]
+    fn api_key_command_resolves_secret() {
+        let mut config = Config::default();
+        config.providers.get_mut("openai").unwrap().api_key_command =
+            Some("echo sk-from-keychain".into());
+        assert!(config.is_configured());
+        let resolved = config.resolve(Some("openai/gpt-4o-mini")).unwrap();
+        assert_eq!(resolved.api_key, "sk-from-keychain");
     }
 }

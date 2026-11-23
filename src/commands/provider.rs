@@ -45,6 +45,7 @@ pub(super) async fn provider_command(command: &ProviderCommand) -> Result<()> {
             kind,
             base_url,
             api_key_env,
+            api_key_command,
             model,
         } => {
             let mut config = Config::load_raw()?;
@@ -63,6 +64,7 @@ pub(super) async fn provider_command(command: &ProviderCommand) -> Result<()> {
             let provider = ProviderConfig {
                 base_url: base_url.clone(),
                 api_key_env: api_key_env.clone(),
+                api_key_command: api_key_command.clone(),
                 model: model.clone(),
                 ..ProviderConfig::defaults_for(kind)
             };

@@ -59,7 +59,13 @@ matrix and cross-compilation instructions.
 One line, downloads the prebuilt binary for your platform:
 
 ```bash
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.ps1 | iex
 ```
 
 Or with npm:
@@ -286,6 +292,7 @@ Exit codes: `0` success, `2` usage, `3` config/auth, `4` runtime, `6` timeout,
 | `PgUp` / `PgDn` | scroll the transcript |
 | `a` / `A` / `d` | allow once / always allow / deny (permission modal) |
 | `Ctrl+O` | expand or collapse tool outputs in the transcript |
+| `Ctrl+Y` | copy the last assistant reply (`/copy code` for last code block) |
 | `Ctrl+V` / `/image` | attach a clipboard screenshot or image file |
 | `@` | mention a workspace file, plugin, or skill |
 | `/` | open the command palette |
@@ -297,8 +304,9 @@ Typing `@` opens an autocomplete popup for workspace files, plugins, and skills.
 Slash commands: `/help`, `/changelog`, `/new`, `/model`, `/effort`,
 `/permissions`, `/sandbox`, `/image`, `/tools`, `/context`, `/sessions`,
 `/resume`, `/status`, `/version`, `/compact`, `/retry`, `/undo`, `/stop`,
-`/export`, `/config`, `/doctor`, `/keys`, `/init`, `/skills`, `/skill`,
-`/agents`, `/memory`, `/remember`, `/mcp`, `/team`, `/quit`.
+`/export`, `/copy`, `/find`, `/config`, `/doctor`, `/keys`, `/init`,
+`/skills`, `/skill`, `/agents`, `/memory`, `/remember`, `/mcp`, `/team`,
+`/quit`.
 
 ### Compacting a session
 

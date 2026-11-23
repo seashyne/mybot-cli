@@ -463,6 +463,8 @@ mybot provider remove local
 | `/undo` หรือ `/rewind` | ย้อนกลับการแก้ไข/สร้างไฟล์จาก turn ล่าสุด |
 | `/stop` หรือ `/cancel` | ยกเลิก turn ที่กำลังทำงาน |
 | `/export [path]` | เขียน transcript เป็นไฟล์ markdown |
+| `/copy [code]` หรือ `/yank` | คัดลอกคำตอบล่าสุดหรือ code block ล่าสุดลง clipboard (`Ctrl+Y`) |
+| `/find <text>` หรือ `/search` | ค้นหาข้อความในประวัติสนทนาและผลลัพธ์ tool |
 | `/config` | แสดง path ของ config, providers และ rules |
 | `/doctor` | ตรวจ config และ integrations |
 | `/keys` หรือ `/hotkeys` | แสดงปุ่มลัด |

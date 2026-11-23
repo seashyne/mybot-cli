@@ -214,6 +214,8 @@ pub enum ProviderCommand {
         base_url: Option<String>,
         #[arg(long = "api-key-env")]
         api_key_env: Option<String>,
+        #[arg(long = "api-key-command")]
+        api_key_command: Option<String>,
         #[arg(long)]
         model: Option<String>,
     },

@@ -246,6 +246,7 @@ impl App {
              Ctrl+D             exit when the composer is empty\n\
              PgUp/PgDn          scroll the transcript\n\
              Ctrl+O             expand or collapse tool outputs\n\
+             Ctrl+Y             copy last reply to clipboard (/copy code for code block)\n\
              Ctrl+V / /image    attach clipboard screenshot or image file\n\
              @                  mention a file, plugin, or skill\n\
              /                  open the command palette\n\
