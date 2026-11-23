@@ -1,4 +1,6 @@
-use super::{download, install, platform, release};
+#[cfg(unix)]
+use super::install;
+use super::{download, platform, release};
 
 const RELEASE_JSON: &str = r#"{
   "tag_name": "v0.2.0",

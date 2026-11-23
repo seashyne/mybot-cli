@@ -129,23 +129,21 @@ fn build_direct(shell_script: &str) -> Command {
 
 #[cfg(windows)]
 fn find_windows_bash() -> Option<&'static str> {
-    for candidate in [
+    [
         "bash",
         r"C:\Program Files\Git\bin\bash.exe",
         r"C:\Program Files (x86)\Git\bin\bash.exe",
-    ] {
-        if std::process::Command::new(candidate)
+    ]
+    .into_iter()
+    .find(|&candidate| {
+        std::process::Command::new(candidate)
             .arg("--version")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
             .is_ok_and(|s| s.success())
-        {
-            return Some(candidate);
-        }
-    }
-    None
+    })
 }
 
 #[allow(dead_code)]
