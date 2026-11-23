@@ -61,9 +61,9 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     CommandSpec {
         name: "model",
-        aliases: &[],
-        args: "[provider/model]",
-        description: "Switch model with a searchable picker",
+        aliases: &["custom"],
+        args: "[provider/model|custom]",
+        description: "Switch model or configure a custom URL/model/key",
         category: Category::Model,
         idle_only: false,
     },

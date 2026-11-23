@@ -193,6 +193,7 @@ fn draws_the_model_picker_overlay() {
         loading: false,
         pending: 0,
         notes: Vec::new(),
+        custom_form: None,
     });
 
     let backend = TestBackend::new(90, 30);

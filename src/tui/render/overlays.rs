@@ -91,6 +91,12 @@ pub(super) fn draw_model_picker(frame: &mut Frame, app: &App, area: Rect) {
     let inner = block.inner(rect);
     frame.render_widget(block, rect);
 
+    if let Some(form) = &picker.custom_form {
+        let lines = form.render_lines(inner.height, picker.error.as_deref());
+        frame.render_widget(Paragraph::new(lines), inner);
+        return;
+    }
+
     let mut lines: Vec<Line<'static>> = Vec::new();
     lines.push(Line::from(vec![
         Span::styled("search ", Style::default().fg(theme::DIM)),
@@ -151,6 +157,8 @@ pub(super) fn draw_model_picker(frame: &mut Frame, app: &App, area: Rect) {
             };
             let tag = if current {
                 (" current", theme::CODE)
+            } else if item.provider == "custom" && item.model.starts_with('+') {
+                (" configure", theme::USER)
             } else if item.ready {
                 ("", theme::DIM)
             } else {

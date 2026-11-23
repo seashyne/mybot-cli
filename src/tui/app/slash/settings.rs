@@ -36,12 +36,18 @@ impl App {
             return;
         }
 
-        let mut picker = if args.is_empty() {
+        let mut picker = if args.is_empty() || args.eq_ignore_ascii_case("custom") {
             picker
         } else {
             ModelPicker::with_query(&config, args)
         };
-        picker.select_current(&self.status.provider, &self.status.model);
+        if args.eq_ignore_ascii_case("custom") {
+            picker.custom_form = Some(crate::tui::app::picker::CustomForm::for_provider(
+                "custom", "",
+            ));
+        } else {
+            picker.select_current(&self.status.provider, &self.status.model);
+        }
 
         let mut pending = 0usize;
         for (name, provider) in &config.providers {
@@ -344,21 +350,13 @@ impl App {
             return;
         }
         let mut store = MemoryStore::load(&self.cwd);
-        let title: String = args
-            .lines()
-            .next()
-            .unwrap_or(args)
-            .chars()
-            .take(60)
-            .collect();
+        let title: String = args.lines().next().unwrap_or(args).chars().take(60).collect();
         let name = format!("note-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
         match store.write(&name, &title, &title, MemoryKind::Project, args) {
             Ok(path) => {
                 self.info(format!("saved memory to {}", path.display()));
-                self.transcript.push(Entry::Info(format!(
-                    "memory saved: {}",
-                    crate::memory::slugify(&name)
-                )));
+                self.transcript
+                    .push(Entry::Info(format!("memory saved: {}", crate::memory::slugify(&name))));
             }
             Err(error) => self.info(format!("cannot save memory: {error}")),
         }

@@ -7,6 +7,11 @@ use super::{App, Ctx};
 impl App {
     pub(crate) fn handle_paste(&mut self, text: &str, ctx: &Ctx) {
         if let Some(picker) = &mut self.model_picker {
+            if let Some(form) = &mut picker.custom_form {
+                form.active_mut().push_str(text.trim());
+                picker.error = None;
+                return;
+            }
             picker.query.push_str(text.trim());
             picker.selected = 0;
             picker.error = None;

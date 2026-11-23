@@ -9,6 +9,12 @@ use crate::providers::catalog;
 
 use super::{App, Ctx};
 
+mod custom;
+
+pub use custom::CustomForm;
+
+pub const CUSTOM_ENTRY_LABEL: &str = "+ custom URL / model / key…";
+
 pub struct ModelItem {
     pub provider: String,
     pub model: String,
@@ -24,6 +30,7 @@ pub struct ModelPicker {
     pub loading: bool,
     pub pending: usize,
     pub notes: Vec<String>,
+    pub custom_form: Option<CustomForm>,
 }
 
 impl ModelPicker {
@@ -49,6 +56,11 @@ impl ModelPicker {
                 });
             }
         }
+        all.push(ModelItem {
+            provider: "custom".to_string(),
+            model: CUSTOM_ENTRY_LABEL.to_string(),
+            ready: true,
+        });
         for preset in crate::providers::presets::PRESETS {
             if preset.name == "custom" || config.providers.contains_key(preset.name) {
                 continue;
@@ -73,6 +85,7 @@ impl ModelPicker {
             loading: false,
             pending: 0,
             notes: Vec::new(),
+            custom_form: None,
         }
     }
 
@@ -179,12 +192,21 @@ impl App {
         }
         let control = key.modifiers.contains(KeyModifiers::CONTROL);
 
+        if self
+            .model_picker
+            .as_ref()
+            .is_some_and(|p| p.custom_form.is_some())
+        {
+            return self.handle_custom_form_key(key, control, ctx);
+        }
+
         enum Act {
             None,
             Close,
             ClearQuery,
             Move(isize),
             Edit(Option<char>),
+            OpenForm(String, String),
             Apply(String, String),
         }
 
@@ -208,7 +230,11 @@ impl App {
                 KeyCode::Enter => {
                     let visible = picker.visible();
                     if let Some(item) = visible.get(picker.selected) {
-                        Act::Apply(item.provider.clone(), item.model.clone())
+                        if item.model == CUSTOM_ENTRY_LABEL || !item.ready {
+                            Act::OpenForm(item.provider.clone(), item.model.clone())
+                        } else {
+                            Act::Apply(item.provider.clone(), item.model.clone())
+                        }
                     } else {
                         let query = picker.query.trim();
                         if query.is_empty() {
@@ -251,6 +277,12 @@ impl App {
                 if let Some(picker) = &mut self.model_picker {
                     picker.query.pop();
                     picker.reset_selection();
+                }
+            }
+            Act::OpenForm(provider, model) => {
+                if let Some(picker) = &mut self.model_picker {
+                    picker.custom_form = Some(CustomForm::for_provider(&provider, &model));
+                    picker.error = None;
                 }
             }
             Act::Apply(provider, model) => self.apply_model(ctx, &provider, &model),
@@ -316,12 +348,16 @@ impl App {
                 )));
             }
             Err(_) if needs_key_prompt => {
-                self.model_picker = None;
-                self.composer.set_text(&format!("/key {provider} "));
-                self.info(format!("paste API key for {provider} and press Enter"));
-                self.transcript.push(super::Entry::Info(format!(
-                    "Selected {provider}/{model}. Paste your API key after `/key {provider} ` in the message box below and press Enter."
-                )));
+                let form = CustomForm::for_provider(provider, model);
+                if let Some(picker) = &mut self.model_picker {
+                    picker.custom_form = Some(form);
+                    picker.error = Some(format!(
+                        "enter API key for {provider} (or edit Base URL / Model ID)"
+                    ));
+                } else {
+                    self.composer.set_text(&format!("/key {provider} "));
+                    self.info(format!("paste API key for {provider} and press Enter"));
+                }
             }
             Err(error) => {
                 if let Some(picker) = &mut self.model_picker {
@@ -335,62 +371,4 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::{Config, ProviderConfig, ProviderKind};
-
-    fn config() -> Config {
-        let mut config = Config::default();
-        config.providers.insert(
-            "deepseek".into(),
-            ProviderConfig {
-                model: Some("deepseek-reasoner".into()),
-                ..ProviderConfig::defaults_for(ProviderKind::OpenAi)
-            },
-        );
-        config
-    }
-
-    #[test]
-    fn lists_every_catalog_model_per_provider() {
-        let picker = ModelPicker::from_config(&config());
-        assert!(picker.all.iter().filter(|i| i.provider == "anthropic").count() >= 3);
-    }
-
-    #[test]
-    fn configured_model_is_first() {
-        let picker = ModelPicker::from_config(&config());
-        let first = picker.all.iter().find(|i| i.provider == "deepseek").unwrap();
-        assert_eq!(first.model, "deepseek-reasoner");
-    }
-
-    #[test]
-    fn query_filters_by_provider_or_model() {
-        let mut picker = ModelPicker::from_config(&config());
-        picker.query = "sonnet".into();
-        assert!(picker.visible().iter().all(|i| i.model.contains("sonnet")));
-        picker.query = "deepseek/".into();
-        assert!(picker.visible().iter().all(|i| i.provider == "deepseek"));
-    }
-
-    #[test]
-    fn live_models_are_prepended_and_catalog_entries_kept() {
-        let mut picker = ModelPicker::from_config(&config());
-        picker.merge_models("anthropic", &["claude-live".into(), "claude-sonnet-4-5".into()]);
-        let anthropic: Vec<&ModelItem> = picker.all.iter().filter(|i| i.provider == "anthropic").collect();
-        assert_eq!(anthropic[0].model, "claude-live");
-        assert!(anthropic.iter().any(|i| i.model == "claude-opus-4-1"));
-        assert_eq!(anthropic.iter().filter(|i| i.model == "claude-sonnet-4-5").count(), 1);
-    }
-
-    #[test]
-    fn selection_wraps() {
-        let mut picker = ModelPicker::from_config(&config());
-        let len = picker.visible().len();
-        picker.selected = len - 1;
-        picker.move_selection(1);
-        assert_eq!(picker.selected, 0);
-        picker.move_selection(-1);
-        assert_eq!(picker.selected, len - 1);
-    }
-}
+mod tests;
