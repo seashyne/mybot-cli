@@ -18,9 +18,10 @@ mybot คือ AI coding agent สำหรับ terminal ที่เขี�
 - **รองรับ 2 wire protocol**: Anthropic Messages API และ OpenAI-compatible Chat
   Completions (streaming SSE ทั้งคู่) ใช้ได้กับ Anthropic, OpenAI, MiniMax,
   DeepSeek, OpenRouter, Ollama, LM Studio และ endpoint ที่เข้ากันได้
-- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `todowrite`, `skill`,
-  `memory`, `agent` และ tool จาก MCP server (`mcp__<server>__<tool>`)
-- **Permissions**: โหมด `ask`, `auto`, `full` พร้อมกฎ allow/deny ที่บันทึกไว้
+- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `web_fetch`,
+  `todowrite`, `skill`, `memory`, `agent` และ tool จาก MCP server (`mcp__<server>__<tool>`)
+- **OS Sandbox**: รันคำสั่ง `bash` ภายใน `bubblewrap` (`bwrap`) บน Linux และ `sandbox-exec` บน macOS ในโหมด `auto`/`strict` เพื่อป้องกันการแก้ไฟล์นอกโปรเจกต์และซ่อน `~/.mybot`
+- **Permissions & Diff Previews**: โหมด `ask`, `auto`, `full` พร้อมแสดง Unified Diff สีแดง/เขียวก่อนแก้ไฟล์ และย้อนกลับด้วย `/undo` (`/rewind`)
 - **Sessions**: เก็บเป็น JSONL ใน `~/.mybot/sessions` ต่อด้วย `-c` หรือ `--session`
 - **Context compaction**: `/compact` สรุปบทสนทนาแล้วแทน history ด้วย summary
 - **MCP servers**: เชื่อมได้ทั้ง stdio และ streamable HTTP
@@ -37,10 +38,10 @@ mybot คือ AI coding agent สำหรับ terminal ที่เขี�
 
 | แพลตฟอร์ม | สถานะ | หมายเหตุ |
 | --- | --- | --- |
-| Linux x86_64 | ทดสอบแล้ว | เครื่องที่ใช้พัฒนา |
-| Linux aarch64 | ทดสอบผ่าน Docker/QEMU | Raspberry Pi OS 64-bit, เซิร์ฟเวอร์ ARM |
-| macOS x86_64 / Apple Silicon | คาดว่ารองรับ | build จาก source; ยังไม่มีฮาร์ดแวร์ทดสอบใน repo นี้ |
-| Windows 10/11 | best-effort | ต้องใช้ WSL2 หรือ Git Bash และมี `bash` |
+| Linux x86_64 | ทดสอบแล้ว | รองรับเต็มรูปแบบ + OS Sandbox (`bwrap`) |
+| Linux aarch64 | ทดสอบผ่าน CI/Cross | Raspberry Pi OS 64-bit, เซิร์ฟเวอร์ ARM |
+| macOS x86_64 / Apple Silicon | ทดสอบผ่าน CI | รองรับเต็มรูปแบบ + Seatbelt (`sandbox-exec`) |
+| Windows 10/11 (x86_64) | ทดสอบผ่าน CI | Native binary (`x86_64-pc-windows-msvc`), Git Bash / PowerShell |
 | Android Termux (aarch64) | experimental | ยังไม่ทดสอบ |
 | wasm / iOS | ไม่รองรับ | ต้องใช้ process และ terminal |
 
@@ -59,7 +60,14 @@ mybot คือ AI coding agent สำหรับ terminal ที่เขี�
 ดาวน์โหลด binary ที่ build ไว้แล้วสำหรับแพลตฟอร์มของคุณ:
 
 ```bash
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.sh | sh
+```
+
+บน Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/seashyne/mybot-cli/main/install.ps1 | iex
 ```
 
 ติดตั้งลง `~/.local/bin` และตรวจ checksum ให้อัตโนมัติ
@@ -311,11 +319,17 @@ provider เพื่อเติม model ที่มีจริงในบ�
 ```
 
 - พิมพ์เพื่อกรองได้ทันที เช่น `sonnet`, `deepseek/`, `gpt`
-- รายการที่ API ตอบกลับมาจะถูกเติมไว้บนสุด และเก็บ model ที่ตั้งไว้ใน config ไว้ด้วย
-- ถ้าพิมพ์ชื่อ model ที่ไม่มีในรายการแล้วกด Enter จะใช้ค่านั้นเป็น model id ตรง ๆ
-- provider ที่ยังไม่ได้ใส่ key จะขึ้น `needs key` แต่ยังเลือกได้ (จะ error ตอนส่งจริง)
-- เลือกแล้ว Enter → สลับทันทีโดยไม่ต้องออกจากโปรแกรม
-- การเปลี่ยนจะถูกบันทึกเป็น `default_provider` ใน `config.toml`
+- แสดงครบทั้ง 14 preset providers (Claude, OpenAI, Gemini, DeepSeek, MiniMax, OpenRouter, Groq, Qwen, GLM, Kimi, Mistral, xAI, LM Studio, Ollama) แม้ยังไม่ได้ตั้งค่าไว้ใน `config.toml`
+- ถ้าเลือก provider ที่ขึ้น `needs key` แล้วกด `Enter` ระบบจะเติมคำสั่ง `/key <provider> ` ลงในช่องพิมพ์ด้านล่างให้อัตโนมัติ เพียงวาง API key แล้วกด `Enter` ก็พร้อมใช้งานทันที
+- หรือพิมพ์คำสั่ง `/key` (หรือ `/login`) ในช่องแชตได้ทุกเมื่อ:
+  - `/key anthropic sk-ant-...`
+  - `/key openai sk-...`
+  - `/key gemini AIza...`
+  - `/key deepseek sk-...`
+  - `/key minimax <API_KEY>`
+  - `/key openrouter sk-or-...`
+  - `/key lmstudio http://127.0.0.1:1234/v1` (เปลี่ยน URL ของ Local Server)
+- เลือกแล้ว Enter → สลับทันทีโดยไม่ต้องออกจากโปรแกรม และบันทึกเป็น `default_provider` ใน `~/.mybot/config.toml` (สิทธิ์ `0600`)
 - บทสนทนายังอยู่ครบ สลับ model กลางบทสนทนาได้
 
 ### 4.6 ใช้แบบ headless
@@ -427,6 +441,10 @@ mybot provider remove local
 | `Up` / `Down` | เรียก history เมื่อช่องว่าง หรือเลื่อน cursor |
 | `PgUp` / `PgDn` | เลื่อน transcript |
 | `a` / `A` / `d` | อนุญาตครั้งเดียว / อนุญาตตลอด / ปฏิเสธ (ตอนถาม permission) |
+| `Ctrl+O` | ย่อหรือขยายผลลัพธ์ของ tool ใน transcript |
+| `Ctrl+V` / `Alt+V` | แนบรูปภาพจาก clipboard เข้าใน prompt |
+| `Ctrl+Y` | คัดลอกคำตอบล่าสุดลง clipboard |
+| `@` | เปิด autocomplete แทรกชื่อไฟล์ในโปรเจกต์, plugin หรือ skill |
 | `/` | เปิด command palette (พิมพ์ต่อเพื่อกรอง) |
 
 ### Command palette
@@ -447,11 +465,14 @@ mybot provider remove local
 | `/help` | แสดงคำสั่งและปุ่มลัด |
 | `/changelog` | แสดงบันทึกการเปลี่ยนแปลงของแต่ละเวอร์ชัน |
 | `/new` หรือ `/clear` | เริ่ม session ใหม่ |
-| `/model [provider/model]` | เปิด picker เลือก model (กรองได้, ดึงรายการจริงจาก API) |
+| `/model [provider/model]` | เปิด picker เลือก model จากทุกค่าย (กรองได้, ดึงรายการจริงจาก API) |
+| `/key [provider] <key\|url>` หรือ `/login` | บันทึก API key หรือเปลี่ยน URL ของ Local Server แล้วสลับใช้งานทันที |
 | `/effort [off\|low\|medium\|high]` | ดูหรือปรับระดับ reasoning effort (บันทึกทันที) |
 | `/permissions [ask\|auto\|full]` | ดูหรือเปลี่ยน permission mode (บันทึกทันที) |
 | `/sandbox [off\|auto\|strict]` | ดูหรือเปลี่ยนโหมด OS sandbox สำหรับคำสั่ง shell |
 | `/image [path\|paste\|clear]` | แนบไฟล์รูปภาพหรือรูปจาก clipboard เข้าใน prompt |
+| `/test [command]` หรือ `/check` | รันเทสต์ของโปรเจกต์ใน OS sandbox (ตรวจจับ `cargo test`, `npm test`, `pytest`, `go test` อัตโนมัติ) |
+| `/diff` หรือ `/git` | แสดง `git status -sb` และ `git diff --stat` ของโปรเจกต์ในหน้าแชต |
 | `/tools` | แสดง tools ที่โมเดลเรียกได้ พร้อมโหมดการทำงาน |
 | `/context` | แสดงขนาด system prompt, บทสนทนา, tokens |
 | `/sessions` | แสดง session ล่าสุด 10 รายการ |
@@ -518,6 +539,7 @@ mybot provider remove local
 | `bash` | รันคำสั่งใน project | timeout 120s (สูงสุด 300s) |
 | `grep` | ค้นหาเนื้อหาไฟล์ | 100 matches (สูงสุด 1,000), 16 KB output |
 | `glob` | หาไฟล์ตาม pattern | 200 files (สูงสุด 2,000) |
+| `web_fetch` | ดึงเนื้อหาหน้าเว็บ http/https (ตัด HTML และบล็อก private/local IP ป้องกัน SSRF) | 32 KB (สูงสุด 128 KB) |
 | `todowrite` | จัดการ todo list | แสดงใน TUI |
 | `skill` | โหลด skill ตามชื่อ | ตามเนื้อหาใน SKILL.md |
 | `memory` | อ่าน/เขียนบันทึกโปรเจกต์ | list/read/write/delete |

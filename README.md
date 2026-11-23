@@ -156,9 +156,18 @@ mybot
 ```
 
 Switch models at any time from inside the TUI with `/model` — the picker lists
-the curated models for every configured provider, then replaces them with the
-live list each API returns. The choice is written back to `config.toml` and the
-conversation is kept.
+all 14 preset providers plus your configured providers, and replaces them with
+the live model list each API returns. Selecting a provider that needs an API key
+prefills `/key <provider> ` in the composer so you can paste your key and
+connect without leaving the TUI:
+
+```text
+/key anthropic sk-ant-...
+/key openai sk-...
+/key deepseek sk-...
+/key minimax <key>
+/key lmstudio http://127.0.0.1:1234/v1
+```
 
 OpenAI-compatible providers can also be added without editing files:
 
@@ -301,12 +310,12 @@ Typing `/` opens a searchable command palette above the composer; `Tab`
 completes the highlighted command, `Enter` runs it, and `Esc` closes it.
 Typing `@` opens an autocomplete popup for workspace files, plugins, and skills.
 
-Slash commands: `/help`, `/changelog`, `/new`, `/model`, `/effort`,
-`/permissions`, `/sandbox`, `/image`, `/tools`, `/context`, `/sessions`,
-`/resume`, `/status`, `/version`, `/compact`, `/retry`, `/undo`, `/stop`,
-`/export`, `/copy`, `/find`, `/config`, `/doctor`, `/keys`, `/init`,
-`/skills`, `/skill`, `/agents`, `/memory`, `/remember`, `/mcp`, `/team`,
-`/quit`.
+Slash commands: `/help`, `/changelog`, `/new`, `/model`, `/key` (`/login`),
+`/effort`, `/permissions`, `/sandbox`, `/image`, `/test` (`/check`),
+`/diff` (`/git`), `/tools`, `/context`, `/sessions`, `/resume`, `/status`,
+`/version`, `/compact`, `/retry`, `/undo`, `/stop`, `/export`, `/copy`,
+`/find`, `/config`, `/doctor`, `/keys`, `/init`, `/skills`, `/skill`,
+`/agents`, `/memory`, `/remember`, `/mcp`, `/team`, `/quit`.
 
 ### Compacting a session
 

@@ -60,7 +60,7 @@ pub(super) fn lines(app: &App, width: usize) -> Vec<Line<'static>> {
     for tip in [
         "Say what you want and how to verify it.",
         "Use /permissions for tool approvals, or /init for AGENTS.md.",
-        "Use /model to switch models, /effort for reasoning, /help for all.",
+        "Use /model to switch models, /key to set API keys, /help for all.",
     ] {
         out.push(tip_row(&margin, inner_w, tip, false));
     }
