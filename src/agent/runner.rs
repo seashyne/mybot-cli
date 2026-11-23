@@ -181,7 +181,12 @@ impl Agent {
             };
 
             let mut stream = match self.open_stream(request, tx, cancel).await {
-                Ok(stream) => stream,
+                Ok(stream) => {
+                    let _ = tx
+                        .send(AgentEvent::ModelName(self.provider.model().to_string()))
+                        .await;
+                    stream
+                }
                 Err(error) => {
                     if cancel.is_cancelled() {
                         let _ = tx

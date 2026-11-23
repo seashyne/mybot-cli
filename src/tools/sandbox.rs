@@ -149,20 +149,46 @@ fn find_windows_bash() -> Option<&'static str> {
 }
 
 #[allow(dead_code)]
+fn writable_cache_paths() -> Vec<std::path::PathBuf> {
+    let Some(home) = dirs::home_dir() else {
+        return Vec::new();
+    };
+    [
+        ".cache",
+        ".npm",
+        ".cargo/registry",
+        ".cargo/git",
+        ".cargo/.package-cache",
+    ]
+    .into_iter()
+    .map(|rel| home.join(rel))
+    .filter(|path| path.exists())
+    .collect()
+}
+
+#[allow(dead_code)]
 fn build_bwrap(shell_script: &str, cwd: &Path) -> Command {
     let mut cmd = Command::new("bwrap");
     cmd.args(["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]);
     if Path::new("/tmp").exists() {
         cmd.args(["--bind", "/tmp", "/tmp"]);
     }
+    for cache in writable_cache_paths() {
+        let s = cache.to_string_lossy().to_string();
+        cmd.args(["--bind", &s, &s]);
+    }
 
+    let cwd_str = cwd.to_string_lossy().to_string();
+    cmd.args(["--bind", &cwd_str, &cwd_str]);
+
+    // Mount tmpfs over ~/.mybot after binding cwd so API keys stay hidden even
+    // when mybot is launched directly from $HOME.
     let data_dir = crate::config::data_dir();
     if data_dir.exists() && !cwd.starts_with(&data_dir) {
         cmd.arg("--tmpfs").arg(&data_dir);
     }
 
-    let cwd_str = cwd.to_string_lossy().to_string();
-    cmd.args(["--bind", &cwd_str, &cwd_str, "--die-with-parent"]);
+    cmd.arg("--die-with-parent");
     cmd.args(["bash", "-lc", shell_script]);
     cmd
 }
@@ -170,6 +196,10 @@ fn build_bwrap(shell_script: &str, cwd: &Path) -> Command {
 #[allow(dead_code)]
 fn build_seatbelt(shell_script: &str, cwd: &Path) -> Command {
     let cwd_escaped = escape_seatbelt(cwd);
+    let extra_caches: String = writable_cache_paths()
+        .iter()
+        .map(|p| format!(" (subpath \"{}\")", escape_seatbelt(p)))
+        .collect();
     let data_dir = crate::config::data_dir();
     let hide_data = if !cwd.starts_with(&data_dir) {
         format!("(deny file-read* (subpath \"{}\"))", escape_seatbelt(&data_dir))
@@ -185,7 +215,7 @@ fn build_seatbelt(shell_script: &str, cwd: &Path) -> Command {
            (subpath \"/tmp\") \
            (subpath \"/private/tmp\") \
            (subpath \"/private/var/folders\") \
-           (subpath \"/dev\"))\
+           (subpath \"/dev\"){extra_caches})\
          {hide_data}"
     );
 

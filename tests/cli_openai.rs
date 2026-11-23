@@ -117,3 +117,121 @@ async fn auto_model_reports_missing_models_clearly() {
         .code(3)
         .stderr(predicate::str::contains("no chat model available"));
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn exec_writes_code_edits_and_runs_tests_end_to_end() {
+    use serde_json::json;
+
+    fn tool_sse(id: &str, name: &str, args: serde_json::Value) -> String {
+        let chunk = json!({
+            "id": id,
+            "choices": [{
+                "index": 0,
+                "delta": {
+                    "tool_calls": [{
+                        "index": 0,
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": args.to_string(),
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        });
+        format!("data: {chunk}\n\ndata: [DONE]\n\n")
+    }
+
+    let turns = Arc::new(Mutex::new(0usize));
+    let turns_for_handler = turns.clone();
+
+    let chat = move |body: String| {
+        let turns = turns_for_handler.clone();
+        async move {
+            let mut turn = turns.lock().unwrap();
+            *turn += 1;
+            let sse = match *turn {
+                // Turn 1: write a script with an intentional bug (val=5 instead of 4).
+                1 => tool_sse(
+                    "call_w",
+                    "write",
+                    json!({
+                        "path": "calc.sh",
+                        "content": "#!/bin/sh\nval=5\nif [ $val -eq 4 ]; then echo PASS; exit 0; else echo FAIL_GOT_$val; exit 1; fi\n"
+                    }),
+                ),
+                // Turn 2: run the test suite via bash (expected to fail with FAIL_GOT_5).
+                2 => {
+                    assert!(body.contains("Wrote"), "expected write tool output: {body}");
+                    tool_sse("call_b1", "bash", json!({ "command": "sh calc.sh" }))
+                }
+                // Turn 3: inspect the failing test output and edit calc.sh to fix val=4.
+                3 => {
+                    assert!(
+                        body.contains("FAIL_GOT_5"),
+                        "expected failing test output in tool result: {body}"
+                    );
+                    tool_sse(
+                        "call_e",
+                        "edit",
+                        json!({
+                            "path": "calc.sh",
+                            "old_string": "val=5",
+                            "new_string": "val=4"
+                        }),
+                    )
+                }
+                // Turn 4: re-run the test suite via bash (now passes with PASS).
+                4 => {
+                    assert!(body.contains("Edited"), "expected edit tool output: {body}");
+                    tool_sse("call_b2", "bash", json!({ "command": "sh calc.sh" }))
+                }
+                // Turn 5: confirm PASS in tool output and return final summary.
+                _ => {
+                    assert!(
+                        body.contains("PASS"),
+                        "expected passing test output in tool result: {body}"
+                    );
+                    concat!(
+                        "data: {\"id\":\"c5\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Fixed calc.sh and all tests passed.\"},\"finish_reason\":\"stop\"}]}\n\n",
+                        "data: [DONE]\n\n",
+                    )
+                    .to_string()
+                }
+            };
+            ([("content-type", "text/event-stream")], sse)
+        }
+    };
+
+    let app = Router::new()
+        .route("/v1/models", get(models_handler))
+        .route("/v1/chat/completions", post(chat));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let home = tempfile::tempdir().unwrap();
+    let workspace = tempfile::tempdir().unwrap();
+    write_config(home.path(), &format!("http://{address}/v1"));
+
+    let mut command = Command::cargo_bin("mybot").unwrap();
+    command
+        .args(["exec", "write calc.sh, run tests, and fix any failure", "--permission", "full"])
+        .current_dir(workspace.path())
+        .env("MYBOT_HOME", home.path())
+        .env_remove("OPENAI_API_KEY")
+        .env_remove("ANTHROPIC_API_KEY");
+
+    command
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Fixed calc.sh and all tests passed."));
+
+    let final_code = std::fs::read_to_string(workspace.path().join("calc.sh")).unwrap();
+    assert!(final_code.contains("val=4"));
+    assert_eq!(*turns.lock().unwrap(), 5);
+}

@@ -214,6 +214,20 @@ pub async fn run(options: TuiOptions) -> Result<()> {
 
     app.start_initial(&ctx);
 
+    if resolved.kind == crate::config::ProviderKind::OpenAi
+        && resolved.model.eq_ignore_ascii_case("auto")
+    {
+        let probe_resolved = resolved.clone();
+        let probe_tx = tx.clone();
+        tokio::spawn(async move {
+            if let Ok(mut models) = crate::providers::openai::list_models(&probe_resolved).await
+                && let Some(first) = models.drain(..).next()
+            {
+                let _ = probe_tx.send(AgentEvent::ModelName(first)).await;
+            }
+        });
+    }
+
     let mut ticker = tokio::time::interval(Duration::from_millis(100));
     loop {
         terminal
