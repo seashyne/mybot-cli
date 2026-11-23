@@ -134,20 +134,18 @@ pub async fn list_models(resolved: &Resolved) -> Result<Vec<String>, ProviderErr
         .json()
         .await
         .map_err(|e| ProviderError::protocol(format!("invalid model list: {e}")))?;
-    let mut models: Vec<String> = value
-        .get("data")
-        .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| entry.get("id").and_then(Value::as_str))
-                .filter(|id| !id.is_empty() && !looks_like_embedding(id))
-                .map(str::to_string)
-                .collect()
-        })
-        .unwrap_or_default();
-    models.sort();
-    models.dedup();
+    let mut models: Vec<String> = Vec::new();
+    if let Some(entries) = value.get("data").and_then(Value::as_array) {
+        for id in entries
+            .iter()
+            .filter_map(|entry| entry.get("id").and_then(Value::as_str))
+            .filter(|id| !id.is_empty() && !looks_like_embedding(id))
+        {
+            if !models.iter().any(|existing| existing == id) {
+                models.push(id.to_string());
+            }
+        }
+    }
     Ok(models)
 }
 

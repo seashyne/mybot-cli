@@ -51,6 +51,9 @@ impl Tool for ReadTool {
             return ToolOutput::error("missing required argument: path");
         };
         let path = resolve_path(&ctx.cwd, raw_path);
+        if path.is_dir() {
+            return read_directory(&ctx.cwd, &path);
+        }
 
         let bytes = match tokio::fs::read(&path).await {
             Ok(bytes) => bytes,
@@ -120,6 +123,39 @@ impl Tool for ReadTool {
 
         ToolOutput::ok(out)
     }
+}
+
+fn read_directory(cwd: &std::path::Path, dir: &std::path::Path) -> ToolOutput {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) => {
+            return ToolOutput::error(format!("cannot list {}: {error}", dir.display()));
+        }
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if entry.file_type().is_ok_and(|ft| ft.is_dir()) {
+                format!("{name}/")
+            } else {
+                name
+            }
+        })
+        .collect();
+    names.sort();
+    let total = names.len();
+    let mut out = format!(
+        "Directory {} ({total} entries):\n",
+        display_path(cwd, dir)
+    );
+    for (idx, name) in names.into_iter().take(200).enumerate() {
+        out.push_str(&format!("{}→{name}\n", idx + 1));
+    }
+    if total > 200 {
+        out.push_str(&format!("\n[truncated: showed 200 of {total} entries]\n"));
+    }
+    ToolOutput::ok(out)
 }
 
 #[cfg(test)]
