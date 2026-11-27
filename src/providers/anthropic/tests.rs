@@ -26,9 +26,36 @@ fn req() -> CompletionRequest {
 fn body_places_system_and_tools() {
     let body = build_body(&req());
     assert_eq!(body["system"][0]["text"], "be helpful");
+    assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
     assert_eq!(body["tools"][0]["name"], "read");
+    assert_eq!(body["tools"][0]["cache_control"]["type"], "ephemeral");
+    assert_eq!(body["messages"][0]["content"][0]["cache_control"]["type"], "ephemeral");
     assert_eq!(body["stream"], true);
     assert!(body["temperature"].as_f64().unwrap() > 0.19);
+}
+
+#[test]
+fn usage_includes_prompt_cache_tokens() {
+    let event = SseEvent {
+        event: Some("message_start".into()),
+        data: json!({
+            "type": "message_start",
+            "message": {
+                "usage": {
+                    "input_tokens": 100,
+                    "cache_creation_input_tokens": 500,
+                    "cache_read_input_tokens": 2000,
+                    "output_tokens": 0
+                }
+            }
+        })
+        .to_string(),
+    };
+    let events = normalize_event(&event);
+    assert!(matches!(
+        &events[0],
+        Ok(ProviderEvent::Usage { input: 2600, output: 0 })
+    ));
 }
 
 #[test]

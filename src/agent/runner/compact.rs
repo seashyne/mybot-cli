@@ -9,7 +9,36 @@ use crate::providers::{CompletionRequest, ProviderEvent};
 
 use super::Agent;
 
+const AUTO_COMPACT_PERCENT: usize = 82;
+const MIN_MESSAGES_FOR_AUTO_COMPACT: usize = 4;
+
 impl Agent {
+    /// Automatically compact conversation history when estimated token usage
+    /// reaches 82% of the active model's context window.
+    pub(super) async fn maybe_auto_compact(
+        &mut self,
+        tx: &mpsc::Sender<AgentEvent>,
+        cancel: &CancellationToken,
+    ) {
+        if !self.needs_auto_compact() {
+            return;
+        }
+        let _ = self.compact(tx, cancel).await;
+    }
+
+    pub(crate) fn needs_auto_compact(&self) -> bool {
+        if self.messages.len() < MIN_MESSAGES_FOR_AUTO_COMPACT {
+            return false;
+        }
+        let Some(limit) = crate::providers::catalog::context_window(self.provider.model()) else {
+            return false;
+        };
+        let system_tokens: usize = self.system.iter().map(|s| s.len().div_ceil(4)).sum();
+        let total = system_tokens + estimate_tokens(&self.messages);
+        let threshold = (limit as usize * AUTO_COMPACT_PERCENT) / 100;
+        total >= threshold
+    }
+
     /// Summarize the conversation with the active provider and replace the
     /// history with that summary.
     ///

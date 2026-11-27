@@ -212,3 +212,39 @@ async fn compact_cancel_before_request() {
     assert_eq!(provider.calls(), 0);
     assert_eq!(agent.messages().len(), 1);
 }
+
+#[test]
+fn auto_compact_triggers_only_when_history_crosses_threshold() {
+    let dir = tempfile::tempdir().unwrap();
+    // MockProvider reports model "mock-model" (no catalog window), so check with a known model.
+    struct NamedMock;
+    #[async_trait::async_trait]
+    impl Provider for NamedMock {
+        fn name(&self) -> &str {
+            "openai"
+        }
+        fn model(&self) -> &str {
+            "gpt-4o"
+        }
+        async fn stream(
+            &self,
+            _req: crate::providers::CompletionRequest,
+            _cancel: CancellationToken,
+        ) -> std::result::Result<crate::providers::EventStream, ProviderError> {
+            unreachable!()
+        }
+    }
+
+    let mut ag = agent(Arc::new(NamedMock), dir.path());
+    ag.messages = vec![
+        Message::user("short"),
+        Message::assistant_text("ok"),
+        Message::user("short2"),
+        Message::assistant_text("ok2"),
+    ];
+    assert!(!ag.needs_auto_compact());
+
+    // gpt-4o context window is 128k tokens (~512 KB of text); 82% is ~420 KB.
+    ag.messages.push(Message::user("x".repeat(450_000)));
+    assert!(ag.needs_auto_compact());
+}

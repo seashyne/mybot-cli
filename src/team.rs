@@ -4,6 +4,7 @@
 mod runner;
 mod store;
 mod tools;
+mod worktree;
 #[cfg(test)]
 mod tests;
 

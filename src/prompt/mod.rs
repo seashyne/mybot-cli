@@ -32,6 +32,7 @@ const BASE_PROMPT: &str = r#"You are mybot, a terminal coding agent working insi
 - `write` creates or overwrites a whole file.
 - `edit` replaces exact text; include enough context for a unique match.
 - `bash` runs shell commands in the project directory.
+- `bg_start`, `bg_output`, `bg_stop` run and inspect long-running background processes (dev servers, watchers).
 - `grep` searches file contents, `glob` finds files by pattern.
 - `web_fetch` fetches public http/https documentation or pages (asks permission).
 - `memory` reads and updates durable project notes.

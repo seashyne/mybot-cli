@@ -63,11 +63,13 @@ pub struct Agent {
     messages: Vec<Message>,
     todos: Arc<Mutex<Vec<TodoItem>>>,
     checkpoints: CheckpointStore,
+    hooks: Arc<crate::hooks::HookSet>,
     retry: RetryPolicy,
 }
 
 impl Agent {
     pub fn new(options: AgentOptions) -> Self {
+        let hooks = Arc::new(crate::hooks::HookSet::load(&options.cwd));
         Self {
             provider: options.provider,
             tools: options.tools,
@@ -83,6 +85,7 @@ impl Agent {
             messages: options.messages,
             todos: Arc::new(Mutex::new(Vec::new())),
             checkpoints: CheckpointStore::new(),
+            hooks,
             retry: options.retry,
         }
     }
@@ -144,6 +147,7 @@ impl Agent {
         cancel: &CancellationToken,
     ) -> Result<StopReason> {
         self.checkpoints.begin_turn(input);
+        self.maybe_auto_compact(tx, cancel).await;
         self.record(Message::user_with_images(input, images)).await;
 
         let mut step = 0usize;
@@ -259,7 +263,12 @@ impl Agent {
                 .execute_tools(&assembled.invocations, tx, cancel)
                 .await;
             self.record(Message::ToolResults { results }).await;
+            self.maybe_auto_compact(tx, cancel).await;
         }
+
+        self.hooks
+            .run_stop(&format!("{final_stop:?}"), &self.cwd)
+            .await;
 
         let _ = tx
             .send(AgentEvent::ModelName(self.provider.model().to_string()))

@@ -90,8 +90,8 @@ pub fn build_command(shell_script: &str, cwd: &Path, mode: SandboxMode) -> Resul
     };
 
     let mut cmd = match backend {
-        SandboxBackend::Bubblewrap => build_bwrap(shell_script, cwd),
-        SandboxBackend::Seatbelt => build_seatbelt(shell_script, cwd),
+        SandboxBackend::Bubblewrap => build_bwrap(shell_script, cwd, mode),
+        SandboxBackend::Seatbelt => build_seatbelt(shell_script, cwd, mode),
         SandboxBackend::None => build_direct(shell_script),
     };
 
@@ -165,9 +165,12 @@ fn writable_cache_paths() -> Vec<std::path::PathBuf> {
 }
 
 #[allow(dead_code)]
-fn build_bwrap(shell_script: &str, cwd: &Path) -> Command {
+fn build_bwrap(shell_script: &str, cwd: &Path, mode: SandboxMode) -> Command {
     let mut cmd = Command::new("bwrap");
     cmd.args(["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]);
+    if mode == SandboxMode::Strict {
+        cmd.arg("--unshare-net");
+    }
     if Path::new("/tmp").exists() {
         cmd.args(["--bind", "/tmp", "/tmp"]);
     }
@@ -192,7 +195,7 @@ fn build_bwrap(shell_script: &str, cwd: &Path) -> Command {
 }
 
 #[allow(dead_code)]
-fn build_seatbelt(shell_script: &str, cwd: &Path) -> Command {
+fn build_seatbelt(shell_script: &str, cwd: &Path, mode: SandboxMode) -> Command {
     let cwd_escaped = escape_seatbelt(cwd);
     let extra_caches: String = writable_cache_paths()
         .iter()
@@ -204,6 +207,11 @@ fn build_seatbelt(shell_script: &str, cwd: &Path) -> Command {
     } else {
         String::new()
     };
+    let deny_net = if mode == SandboxMode::Strict {
+        "(deny network*)"
+    } else {
+        ""
+    };
     let profile = format!(
         "(version 1)\
          (allow default)\
@@ -214,7 +222,7 @@ fn build_seatbelt(shell_script: &str, cwd: &Path) -> Command {
            (subpath \"/private/tmp\") \
            (subpath \"/private/var/folders\") \
            (subpath \"/dev\"){extra_caches})\
-         {hide_data}"
+         {hide_data}{deny_net}"
     );
 
     let mut cmd = Command::new("sandbox-exec");
@@ -258,5 +266,26 @@ mod tests {
             stdout.contains("Read-only") || stdout.contains("Permission denied"),
             "unexpected output: {stdout}"
         );
+    }
+
+    #[tokio::test]
+    async fn strict_bwrap_isolates_network_namespace_when_available() {
+        if detected_backend() != SandboxBackend::Bubblewrap {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut cmd = build_command(
+            "cat /proc/net/route | wc -l",
+            dir.path(),
+            SandboxMode::Strict,
+        )
+        .unwrap();
+        let output = cmd.output().await.unwrap();
+        let lines: usize = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(99);
+        // An unshared empty network namespace has only the header line in /proc/net/route.
+        assert_eq!(lines, 1, "expected isolated netns with no routes");
     }
 }

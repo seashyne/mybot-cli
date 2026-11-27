@@ -161,7 +161,8 @@ impl PermissionEngine {
 
     fn auto_allows(&self, request: &PermissionRequest, tool_path: Option<&Path>) -> bool {
         match request.tool.as_str() {
-            "bash" => bash_rules::classify(&request.detail) == BashRisk::Safe,
+            "bash" | "bg_start" => bash_rules::classify(&request.detail) == BashRisk::Safe,
+            "bg_output" | "bg_stop" => true,
             "read" | "grep" | "glob" => tool_path.map(|p| is_inside(&self.cwd, p)).unwrap_or(true),
             "write" | "edit" => tool_path.map(|p| is_inside(&self.cwd, p)).unwrap_or(false),
             "todowrite" | "memory" => true,
@@ -172,7 +173,7 @@ impl PermissionEngine {
     }
 
     fn is_hard_denied(&self, request: &PermissionRequest) -> bool {
-        if request.tool != "bash" {
+        if !matches!(request.tool.as_str(), "bash" | "bg_start") {
             return false;
         }
         bash_rules::classify(&request.detail) == BashRisk::Dangerous
@@ -222,14 +223,14 @@ pub fn request_for(
     cwd: &Path,
 ) -> PermissionRequest {
     let always_rule = match tool {
-        "bash" => {
+        "bash" | "bg_start" => {
             let program = detail
                 .split_whitespace()
                 .next()
                 .unwrap_or("*")
                 .to_string();
             Some(rules::allow_rule(
-                "bash",
+                tool,
                 RuleMatcher::Command,
                 format!("{program} *"),
             ))

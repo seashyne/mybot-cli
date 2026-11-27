@@ -7,6 +7,7 @@ use crate::tools::ToolRegistry;
 
 use super::store::MemberStatus;
 use super::tools::register_member;
+use super::worktree::IsolatedWorktree;
 use super::Team;
 
 const MAX_STEPS: usize = 32;
@@ -19,6 +20,8 @@ pub struct TeammateRequest {
     pub prompt: String,
     /// Optional tool whitelist; team tools are always added.
     pub tools: Option<Vec<String>>,
+    /// When true, run the teammate in an isolated detached git worktree.
+    pub isolate: bool,
 }
 
 impl Team {
@@ -53,8 +56,35 @@ impl Team {
 }
 
 async fn run(team: Arc<Team>, request: TeammateRequest) {
+    let worktree = if request.isolate {
+        IsolatedWorktree::create(&team.runtime.cwd, &request.name).ok()
+    } else {
+        None
+    };
+    let cwd = worktree
+        .as_ref()
+        .map(|wt| wt.path.clone())
+        .unwrap_or_else(|| team.runtime.cwd.clone());
+    let permissions = if worktree.is_some() {
+        Arc::new(crate::permissions::PermissionEngine::with_sandbox(
+            team.runtime.permissions.mode(),
+            team.runtime.permissions.sandbox(),
+            cwd.clone(),
+            Vec::new(),
+        ))
+    } else {
+        team.runtime.permissions.clone()
+    };
+
     let mut system = team.runtime.base_system.clone();
     system.push(rules(&request.name, &request.role));
+    if let Some(wt) = &worktree {
+        system.push(format!(
+            "<worktree>\nYou are running in an isolated git worktree at {}.\n\
+             Edits here do not modify the lead's working copy.\n</worktree>",
+            wt.path.display()
+        ));
+    }
 
     let mut registry = ToolRegistry::with_skills(team.runtime.skills.clone());
     if let Some(mcp) = &team.runtime.mcp {
@@ -70,10 +100,10 @@ async fn run(team: Arc<Team>, request: TeammateRequest) {
     let mut agent = Agent::new(AgentOptions {
         provider: team.runtime.provider.clone(),
         tools: Arc::new(registry),
-        permissions: team.runtime.permissions.clone(),
+        permissions,
         prompter: team.runtime.prompter.clone(),
         system,
-        cwd: team.runtime.cwd.clone(),
+        cwd,
         max_tokens: team.runtime.max_tokens,
         temperature: team.runtime.temperature,
         thinking_budget: team.runtime.thinking_budget,
@@ -108,6 +138,13 @@ async fn run(team: Arc<Team>, request: TeammateRequest) {
     } else {
         report.push_str(text.trim());
         report.push('\n');
+    }
+    if let Some(wt) = worktree {
+        if let Some(changes) = wt.changes_summary() {
+            report.push_str(&format!("\n{changes}\n"));
+        } else {
+            wt.remove();
+        }
     }
     if !trace.is_empty() {
         report.push_str("\ntools:\n");

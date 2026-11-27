@@ -8,6 +8,26 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-27
+
+Seventh release: production agent harness upgrades — Anthropic prompt caching,
+auto-compaction, lifecycle hooks, background processes, teammate git worktrees,
+and network-isolated strict sandboxing.
+
+### Added
+
+- **Prompt caching & auto-compaction** — adds Anthropic ephemeral `cache_control` breakpoints and auto-compacts at 82% context;
+  caches system prompts, tool schemas, and conversation prefixes while counting
+  `cache_read_input_tokens` and `cache_creation_input_tokens` accurately.
+- **Lifecycle hooks (`hooks.toml`)** — run `pre_tool_use`, `post_tool_use`, and `stop` shell hooks from `~/.mybot/hooks.toml` or `.mybot/hooks.toml`;
+  non-zero `pre_tool_use` exits block risky calls and `post_tool_use` stdout/stderr
+  feeds formatter/linter diagnostics directly back to the model.
+- **Background processes & teammate worktrees** — manage dev servers via `bg_start`/`bg_output`/`bg_stop` and isolate teammates with `git worktree`;
+  `spawn_teammate` accepts `isolate: true` for detached worktree execution and
+  reports uncommitted diffs back to the lead.
+- **Strict sandbox network isolation** — `/sandbox strict` now adds `--unshare-net`
+  on Linux `bwrap` and `(deny network*)` on macOS `sandbox-exec`.
+
 ## [0.6.0] - 2026-11-23
 
 Sixth release: interactive custom provider/key setup, `/test` & `/diff`
@@ -231,7 +251,8 @@ First tagged release.
 - Skills and plugins, project context loading, an installer script, an npm
   package, and a documentation site.
 
-[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/seashyne/mybot-cli/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/seashyne/mybot-cli/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/seashyne/mybot-cli/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/seashyne/mybot-cli/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/seashyne/mybot-cli/compare/v0.3.0...v0.4.0

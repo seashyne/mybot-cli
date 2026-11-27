@@ -5,6 +5,7 @@ pub mod compact;
 pub mod config;
 pub mod error;
 pub mod headless;
+pub mod hooks;
 pub mod mcp;
 pub mod memory;
 pub mod permissions;

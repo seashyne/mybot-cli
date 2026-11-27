@@ -108,6 +108,24 @@ impl Agent {
                 continue;
             }
 
+            if let Err(reason) = self
+                .hooks
+                .run_pre_tool_use(&invocation.name, &args, &self.cwd)
+                .await
+            {
+                let result = error_result(invocation, reason);
+                let _ = tx
+                    .send(AgentEvent::ToolEnd {
+                        id: invocation.id.clone(),
+                        name: invocation.name.clone(),
+                        content: result.content.clone(),
+                        is_error: true,
+                    })
+                    .await;
+                results[index] = Some(result);
+                continue;
+            }
+
             runnable.push(index);
         }
 
@@ -171,7 +189,24 @@ impl Agent {
                 });
                 let outputs = futures_util::future::join_all(futures).await;
 
-                for (&item, output) in batch.iter().zip(outputs) {
+                for (&item, mut output) in batch.iter().zip(outputs) {
+                    let item_args = invocations[item]
+                        .arguments
+                        .clone()
+                        .unwrap_or(Value::Object(Default::default()));
+                    if let Some(note) = self
+                        .hooks
+                        .run_post_tool_use(
+                            &invocations[item].name,
+                            &item_args,
+                            &output.content,
+                            output.is_error,
+                            &self.cwd,
+                        )
+                        .await
+                    {
+                        output.content.push_str(&format!("\n[hook]\n{note}"));
+                    }
                     let _ = tx
                         .send(AgentEvent::ToolEnd {
                             id: invocations[item].id.clone(),
@@ -196,7 +231,20 @@ impl Agent {
                         name: invocation.name.clone(),
                     })
                     .await;
-                let output = tool.execute(&args, &ctx).await;
+                let mut output = tool.execute(&args, &ctx).await;
+                if let Some(note) = self
+                    .hooks
+                    .run_post_tool_use(
+                        &invocation.name,
+                        &args,
+                        &output.content,
+                        output.is_error,
+                        &self.cwd,
+                    )
+                    .await
+                {
+                    output.content.push_str(&format!("\n[hook]\n{note}"));
+                }
                 let _ = tx
                     .send(AgentEvent::ToolEnd {
                         id: invocation.id.clone(),
@@ -248,7 +296,7 @@ fn permission_detail(tool: &str, args: &Value, cwd: &std::path::Path) -> String 
         return preview;
     }
     match tool {
-        "bash" => args
+        "bash" | "bg_start" => args
             .get("command")
             .and_then(Value::as_str)
             .unwrap_or_default()

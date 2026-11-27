@@ -150,7 +150,7 @@ impl Tool for BashTool {
 }
 
 #[cfg(unix)]
-fn kill_process_group(pid: Option<u32>) {
+pub(crate) fn kill_process_group(pid: Option<u32>) {
     if let Some(pid) = pid {
         // Negative pid targets the whole process group created by process_group(0).
         unsafe {
@@ -160,7 +160,7 @@ fn kill_process_group(pid: Option<u32>) {
 }
 
 #[cfg(windows)]
-fn kill_process_group(pid: Option<u32>) {
+pub(crate) fn kill_process_group(pid: Option<u32>) {
     if let Some(pid) = pid {
         let _ = std::process::Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
@@ -172,7 +172,7 @@ fn kill_process_group(pid: Option<u32>) {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn kill_process_group(_pid: Option<u32>) {}
+pub(crate) fn kill_process_group(_pid: Option<u32>) {}
 
 #[cfg(test)]
 mod tests {

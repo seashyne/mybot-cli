@@ -1,3 +1,4 @@
+pub mod background;
 pub mod bash;
 pub mod checkpoint;
 pub mod diff;
@@ -146,6 +147,10 @@ impl ToolRegistry {
         registry.register(Arc::new(todo::TodoWriteTool));
         registry.register(Arc::new(memory::MemoryTool::new()));
         registry.register(Arc::new(web::WebFetchTool));
+        let bg = background::BackgroundManager::new();
+        registry.register(Arc::new(background::BgStartTool(bg.clone())));
+        registry.register(Arc::new(background::BgOutputTool(bg.clone())));
+        registry.register(Arc::new(background::BgStopTool(bg)));
         registry
     }
 

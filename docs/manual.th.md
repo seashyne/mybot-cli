@@ -536,7 +536,8 @@ mybot provider remove local
 | `read` | อ่านไฟล์พร้อมเลขบรรทัด | 2,000 บรรทัด หรือ 50 KB ต่อครั้ง |
 | `write` | สร้าง/เขียนทับไฟล์ทั้งไฟล์ | สร้าง parent directory ให้ |
 | `edit` | แทนข้อความแบบ exact match | ต้อง match ไม่ซ้ำ; มี fuzzy fallback |
-| `bash` | รันคำสั่งใน project | timeout 120s (สูงสุด 300s) |
+| `bash` | รันคำสั่งใน project | timeout 120s (สูงสุด 300s), ปิดเน็ตได้ใน `/sandbox strict` |
+| `bg_start` / `bg_output` / `bg_stop` | เปิด อ่าน log และหยุดโปรเซสเบื้องหลัง (dev server, watcher) | เก็บ log ล่าสุด 500 บรรทัด, ปิดอัตโนมัติเมื่อออก |
 | `grep` | ค้นหาเนื้อหาไฟล์ | 100 matches (สูงสุด 1,000), 16 KB output |
 | `glob` | หาไฟล์ตาม pattern | 200 files (สูงสุด 2,000) |
 | `web_fetch` | ดึงเนื้อหาหน้าเว็บ http/https (ตัด HTML และบล็อก private/local IP ป้องกัน SSRF) | 32 KB (สูงสุด 128 KB) |
@@ -546,8 +547,23 @@ mybot provider remove local
 | `agent` | มอบงานให้ sub-agent | สูงสุด 24 model turns |
 | `mcp__*` | tool จาก MCP server | ตามที่ server กำหนด |
 | `task_create` / `task_list` / `task_update` | กระดานงานของทีม | ใช้ร่วมกับ teammate |
-| `spawn_teammate` | เปิด teammate ทำงานเบื้องหลัง | สูงสุด 32 model turns |
+| `spawn_teammate` | เปิด teammate ทำงานเบื้องหลัง (รองรับ `isolate: true` แยก git worktree) | สูงสุด 32 model turns |
 | `send_message` / `check_messages` | กล่องข้อความในทีม | `wait_secs` 0-300 |
+
+### Lifecycle Hooks (`hooks.toml`)
+ตั้งสคริปต์รันอัตโนมัติก่อน/หลังเรียก tool หรือเมื่อจบ turn ได้ที่ `~/.mybot/hooks.toml` หรือ `<project>/.mybot/hooks.toml`:
+```toml
+[[pre_tool_use]]
+matcher = "edit|write"
+command = "scripts/check-policy.sh"   # exit code != 0 จะบล็อก tool
+
+[[post_tool_use]]
+matcher = "edit|write"
+command = "rustfmt \"$MYBOT_HOOK_PATH\" 2>/dev/null || true"
+
+[[stop]]
+command = "echo done"
+```
 
 - `read` ให้เลขบรรทัดและตัดบรรทัดที่ยาวเกิน 2,000 ตัวอักษร
 - `edit` ปฏิเสธถ้า match หลายที่ เพื่อไม่แก้ผิดตำแหน่ง

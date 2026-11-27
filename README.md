@@ -11,22 +11,27 @@ mybot exec "explain this repo" --output-format text
 
 ## Features
 
-- **Two wire protocols**: Anthropic Messages API and OpenAI-compatible Chat
-  Completions, both streaming SSE. Works with Anthropic, OpenAI, MiniMax,
-  DeepSeek, OpenRouter, Ollama, and any compatible endpoint.
-- **Tools**: `read`, `write`, `edit`, `bash`, `grep`, `glob`, `web_fetch`,
-  `todowrite`, `skill`, `memory`, `agent`, plus `mcp__<server>__<tool>` for MCP
-  servers.
+- **Two wire protocols**: Anthropic Messages API (with ephemeral prompt caching)
+  and OpenAI-compatible Chat Completions, both streaming SSE. Works with
+  Anthropic, OpenAI, MiniMax, DeepSeek, OpenRouter, Ollama, and any compatible
+  endpoint.
+- **Tools**: `read`, `write`, `edit`, `bash`, `bg_start`, `bg_output`, `bg_stop`,
+  `grep`, `glob`, `web_fetch`, `todowrite`, `skill`, `memory`, `agent`, plus
+  `mcp__<server>__<tool>` for MCP servers.
   Reads are capped and line-numbered, edits are atomic and reject ambiguous
-  matches, `web_fetch` blocks local/private IPs, and bash has timeouts and
-  process-group kills.
+  matches, `web_fetch` blocks local/private IPs, `bg_*` manages background dev
+  servers, and bash has OS sandboxing (`bwrap` with `--unshare-net` in strict
+  mode / macOS `sandbox-exec`), timeouts, and process-group kills.
+- **Lifecycle hooks**: `pre_tool_use`, `post_tool_use`, and `stop` shell hooks
+  in `~/.mybot/hooks.toml` or `.mybot/hooks.toml` for policy checks and
+  automated formatting/linting diagnostics.
 - **Permissions**: `ask`, `auto`, and `full` modes with persisted allow/deny
   rules, a bash risk classifier, and path containment checks.
 - **Sessions**: append-only JSONL ledgers in `~/.mybot/sessions`, with
   `--continue` and `--session <id>`.
-- **Context compaction**: `/compact` summarizes the conversation with the
-  current model, replaces the history with the summary, and records the
-  compaction in the session ledger so resumed sessions stay small.
+- **Context compaction**: `/compact` (and automatic compaction at 82% context
+  window) summarizes the conversation with the current model, replaces the
+  history with the summary, and records the compaction in the session ledger.
 - **Project context**: loads `CLAUDE.md` or `AGENTS.md` from the workspace root
   plus `~/.mybot/AGENTS.md`, capped at 32 KB.
 - **Skills and plugins**: markdown instruction packs loaded on demand, plus

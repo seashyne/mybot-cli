@@ -88,6 +88,7 @@ async fn teammate_runs_in_background_and_reports_to_the_lead() {
             role: "engineer".into(),
             prompt: "fix the parser".into(),
             tools: None,
+            isolate: false,
         })
         .await
         .unwrap();
@@ -116,6 +117,7 @@ async fn duplicate_teammate_names_are_rejected() {
             role: String::new(),
             prompt: "review".into(),
             tools: None,
+            isolate: false,
         })
         .await
         .unwrap_err();

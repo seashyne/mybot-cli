@@ -39,6 +39,10 @@ impl Tool for SpawnTeammate {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Optional tool whitelist (team tools are always available)"
+                },
+                "isolate": {
+                    "type": "boolean",
+                    "description": "Run this teammate in an isolated detached git worktree so parallel edits cannot collide"
                 }
             },
             "required": ["name", "prompt"]
@@ -66,12 +70,17 @@ impl Tool for SpawnTeammate {
                 .map(str::to_string)
                 .collect::<Vec<_>>()
         });
+        let isolate = args
+            .get("isolate")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
 
         let request = TeammateRequest {
             name: name.to_string(),
             role: role.to_string(),
             prompt: prompt.to_string(),
             tools,
+            isolate,
         };
         match self.team.spawn(request).await {
             Ok(name) => ToolOutput::ok(format!(

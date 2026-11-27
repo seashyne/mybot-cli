@@ -83,22 +83,26 @@ pub async fn list_models(resolved: &Resolved) -> Result<Vec<String>, ProviderErr
 }
 
 pub fn build_body(req: &CompletionRequest) -> Value {
+    let mut messages = messages_to_wire(&req.messages);
+    mark_last_message_cached(&mut messages);
+
     let mut body = json!({
         "model": req.model,
         "max_tokens": req.max_tokens,
         "stream": true,
-        "messages": messages_to_wire(&req.messages),
+        "messages": messages,
     });
 
     if !req.system.is_empty() {
         body["system"] = json!([{
             "type": "text",
             "text": req.system.join("\n\n"),
+            "cache_control": {"type": "ephemeral"},
         }]);
     }
 
     if !req.tools.is_empty() {
-        let tools: Vec<Value> = req
+        let mut tools: Vec<Value> = req
             .tools
             .iter()
             .map(|tool| {
@@ -109,6 +113,9 @@ pub fn build_body(req: &CompletionRequest) -> Value {
                 })
             })
             .collect();
+        if let Some(last) = tools.last_mut() {
+            last["cache_control"] = json!({"type": "ephemeral"});
+        }
         body["tools"] = Value::Array(tools);
     }
 
@@ -123,6 +130,34 @@ pub fn build_body(req: &CompletionRequest) -> Value {
         }
 
     body
+}
+
+/// Place an Anthropic ephemeral prompt-cache breakpoint on the final message
+/// block so multi-turn agent loops reuse the cached conversation prefix.
+fn mark_last_message_cached(messages: &mut [Value]) {
+    let Some(last) = messages.last_mut() else {
+        return;
+    };
+    let Some(content) = last.get_mut("content") else {
+        return;
+    };
+    match content {
+        Value::String(text) if !text.is_empty() => {
+            *content = json!([{
+                "type": "text",
+                "text": text.clone(),
+                "cache_control": {"type": "ephemeral"},
+            }]);
+        }
+        Value::Array(blocks) => {
+            if let Some(block) = blocks.last_mut()
+                && block.is_object()
+            {
+                block["cache_control"] = json!({"type": "ephemeral"});
+            }
+        }
+        _ => {}
+    }
 }
 
 pub fn messages_to_wire(messages: &[Message]) -> Vec<Value> {

@@ -128,8 +128,17 @@ pub fn normalize_event(event: &SseEvent) -> Vec<Result<ProviderEvent, ProviderEr
     match name {
         "message_start" => {
             if let Some(usage) = value.pointer("/message/usage") {
+                let base_in = usage.get("input_tokens").and_then(Value::as_u64).unwrap_or(0);
+                let cache_write = usage
+                    .get("cache_creation_input_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
+                let cache_read = usage
+                    .get("cache_read_input_tokens")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0);
                 out.push(Ok(ProviderEvent::Usage {
-                    input: usage.get("input_tokens").and_then(Value::as_u64).unwrap_or(0),
+                    input: base_in.saturating_add(cache_write).saturating_add(cache_read),
                     output: usage
                         .get("output_tokens")
                         .and_then(Value::as_u64)
